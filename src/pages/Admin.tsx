@@ -437,7 +437,7 @@ const Admin = () => {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-semibold text-foreground">{r.full_name}</div>
+                        <div className="font-semibold text-foreground">{displayName(r)}</div>
                         <div className="text-xs text-muted-foreground">
                           {r.age} anos · {r.gender}
                         </div>
@@ -446,9 +446,22 @@ const Admin = () => {
                         {r.city}/{r.state}
                       </td>
                       <td className="px-4 py-3 hidden md:table-cell text-xs text-muted-foreground">
-                        <div>{r.phone}</div>
-                        {r.email && <div className="truncate max-w-[180px]">{r.email}</div>}
+                        {r.email ? (
+                          <span className="truncate max-w-[180px] block">{r.email}</span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
+                      <td className="px-4 py-3 hidden md:table-cell text-xs">
+                        {hasFormAnswers(r) ? (
+                          <span className="font-semibold text-primary">
+                            {formAnswerEntries(r).length}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-1 items-start">
                           {r.google_form_completed ? (
