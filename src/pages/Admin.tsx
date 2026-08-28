@@ -7,6 +7,8 @@ import {
   Copy,
   Download,
   Eye,
+  FileText,
+
   HelpCircle,
   Loader2,
   LogOut,
