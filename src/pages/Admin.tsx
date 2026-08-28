@@ -182,6 +182,7 @@ const Admin = () => {
     return responses.filter((r) => {
       if (statusFilter === "completed" && !r.google_form_completed) return false;
       if (statusFilter === "pending" && r.google_form_completed) return false;
+      if (statusFilter === "answers" && !hasFormAnswers(r)) return false;
       if (!q) return true;
       return (
         r.full_name.toLowerCase().includes(q) ||
