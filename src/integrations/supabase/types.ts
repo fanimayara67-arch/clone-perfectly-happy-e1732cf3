@@ -44,21 +44,21 @@ export type Database = {
       survey_responses: {
         Row: {
           age: number
-          cep: string
+          cep: string | null
           city: string
           consent_given: boolean
           created_at: string
           email: string | null
-          full_name: string
+          full_name: string | null
           gender: string
           google_form_completed: boolean
           google_form_completed_at: string | null
           id: string
           main_answers: Json
-          nationality: string
-          neighborhood: string
+          nationality: string | null
+          neighborhood: string | null
           number: string | null
-          phone: string
+          phone: string | null
           screening_answers: Json
           state: string
           street: string | null
@@ -68,21 +68,21 @@ export type Database = {
         }
         Insert: {
           age: number
-          cep: string
+          cep?: string | null
           city: string
           consent_given?: boolean
           created_at?: string
           email?: string | null
-          full_name: string
+          full_name?: string | null
           gender: string
           google_form_completed?: boolean
           google_form_completed_at?: string | null
           id?: string
           main_answers?: Json
-          nationality: string
-          neighborhood: string
+          nationality?: string | null
+          neighborhood?: string | null
           number?: string | null
-          phone: string
+          phone?: string | null
           screening_answers?: Json
           state: string
           street?: string | null
@@ -92,21 +92,21 @@ export type Database = {
         }
         Update: {
           age?: number
-          cep?: string
+          cep?: string | null
           city?: string
           consent_given?: boolean
           created_at?: string
           email?: string | null
-          full_name?: string
+          full_name?: string | null
           gender?: string
           google_form_completed?: boolean
           google_form_completed_at?: string | null
           id?: string
           main_answers?: Json
-          nationality?: string
-          neighborhood?: string
+          nationality?: string | null
+          neighborhood?: string | null
           number?: string | null
-          phone?: string
+          phone?: string | null
           screening_answers?: Json
           state?: string
           street?: string | null
