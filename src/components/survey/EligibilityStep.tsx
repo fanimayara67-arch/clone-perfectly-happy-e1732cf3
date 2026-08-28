@@ -6,7 +6,7 @@ import { ShieldAlert, MapPin, CalendarCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface EligibilityStepProps {
-  onEligible: () => void;
+  onEligible: (answers: Record<string, string>) => void;
   onIneligible: (reason: "age" | "location" | "criteria") => void;
 }
 
@@ -14,6 +14,14 @@ export const EligibilityStep = ({ onEligible, onIneligible }: EligibilityStepPro
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
   const canSubmit = CRITERIA.every((criterion) => !!answers[criterion.id]);
+
+  const labelled = (raw: Record<string, string>) =>
+    Object.fromEntries(
+      CRITERIA.filter((c) => raw[c.id]).map((c) => [
+        c.title,
+        raw[c.id] === "yes" ? "Sim" : "Não",
+      ]),
+    );
 
   const setCriterionAnswer = (id: string, value: string) => {
     setAnswers((current) => ({ ...current, [id]: value }));
@@ -27,8 +35,9 @@ export const EligibilityStep = ({ onEligible, onIneligible }: EligibilityStepPro
   const handleContinue = () => {
     const failed = CRITERIA.find((criterion) => answers[criterion.id] !== criterion.eligibleValue);
     if (failed) return onIneligible(failed.reason);
-    onEligible();
+    onEligible(labelled(answers));
   };
+
 
   return (
     <div className="space-y-5">
