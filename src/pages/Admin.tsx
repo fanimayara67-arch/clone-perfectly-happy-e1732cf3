@@ -478,46 +478,86 @@ const Admin = () => {
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detalhes da resposta</DialogTitle>
+            <DialogTitle>
+              {selected?.full_name || "Detalhes da resposta"}
+            </DialogTitle>
           </DialogHeader>
           {selected && (
             <div className="space-y-4 text-sm">
-              <Section title="Identificação">
-                <Field label="Código" value={selected.tracking_code || "—"} mono />
-                <Field
-                  label="Status do Google Forms"
-                  value={
-                    selected.google_form_completed
-                      ? `Concluído em ${new Date(selected.google_form_completed_at!).toLocaleString("pt-BR")}`
-                      : "Pendente"
-                  }
-                />
-                <Field label="Cadastrado em" value={new Date(selected.created_at).toLocaleString("pt-BR")} />
-              </Section>
+              <div className="flex gap-1 p-1 rounded-xl bg-secondary/60">
+                <button
+                  onClick={() => setShowForms(false)}
+                  className={cn(
+                    "flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-smooth",
+                    !showForms ? "bg-card shadow-soft text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  Cadastro
+                </button>
+                <button
+                  onClick={() => setShowForms(true)}
+                  className={cn(
+                    "flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-smooth",
+                    showForms ? "bg-card shadow-soft text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  Google Forms
+                  {hasFormAnswers(selected) && (
+                    <span className="ml-1.5 text-[10px] font-bold text-primary">
+                      {formAnswerEntries(selected).length}
+                    </span>
+                  )}
+                </button>
+              </div>
 
-              <Section title="Dados pessoais">
-                <Field label="Nome" value={selected.full_name} />
-                <Field label="Idade" value={String(selected.age)} />
-                <Field label="Gênero" value={selected.gender} />
-                <Field label="Nacionalidade" value={selected.nationality} />
-                <Field label="Email" value={selected.email || "—"} />
-                <Field label="Telefone" value={selected.phone} />
-              </Section>
+              {showForms ? (
+                <Section title="Respostas do Google Forms">
+                  {hasFormAnswers(selected) ? (
+                    <div className="space-y-2.5">
+                      {formAnswerEntries(selected).map(([q, a], i) => (
+                        <div key={q} className="rounded-lg bg-card border border-border/60 p-3">
+                          <p className="text-xs text-muted-foreground mb-1">
+                            {i + 1}. {q.trim()}
+                          </p>
+                          <p className="text-sm font-semibold text-foreground whitespace-pre-wrap">
+                            {String(a)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Ainda não há respostas do Google Forms para este participante. Use “Validar Google
+                      Forms” para sincronizar.
+                    </p>
+                  )}
+                </Section>
+              ) : (
+                <>
+                  <Section title="Identificação">
+                    <Field label="Código" value={selected.tracking_code || "—"} mono />
+                    <Field
+                      label="Status do Google Forms"
+                      value={
+                        selected.google_form_completed
+                          ? `Concluído em ${new Date(selected.google_form_completed_at!).toLocaleString("pt-BR")}`
+                          : "Pendente"
+                      }
+                    />
+                    <Field label="Cadastrado em" value={new Date(selected.created_at).toLocaleString("pt-BR")} />
+                  </Section>
 
-              <Section title="Endereço">
-                <Field label="CEP" value={selected.cep} />
-                <Field label="Rua" value={selected.street || "—"} />
-                <Field label="Número" value={selected.number || "—"} />
-                <Field label="Bairro" value={selected.neighborhood} />
-                <Field label="Cidade/UF" value={`${selected.city}/${selected.state}`} />
-              </Section>
-
-              <Section title="Termo de consentimento">
-                <pre className="bg-secondary rounded-lg p-3 text-xs overflow-x-auto">
-                  {JSON.stringify(selected.screening_answers, null, 2)}
-                </pre>
-              </Section>
+                  <Section title="Dados pessoais">
+                    <Field label="Nome" value={selected.full_name || "—"} />
+                    <Field label="Idade" value={String(selected.age)} />
+                    <Field label="Gênero" value={selected.gender} />
+                    <Field label="Email" value={selected.email || "—"} />
+                    <Field label="Cidade/UF" value={`${selected.city}/${selected.state}`} />
+                  </Section>
+                </>
+              )}
             </div>
+
           )}
         </DialogContent>
       </Dialog>
