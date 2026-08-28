@@ -248,24 +248,27 @@ const Admin = () => {
   const exportCsv = () => {
     const rows = filtered.map((r) => ({
       codigo: r.tracking_code || "",
-      nome: r.full_name,
+      nome: displayName(r),
+      documento: consentInfo(r)?.identity_document || "",
       idade: r.age,
       genero: r.gender,
       email: r.email || "",
-      telefone: r.phone,
-      nacionalidade: r.nationality,
-      cep: r.cep,
-      rua: r.street || "",
-      numero: r.number || "",
-      bairro: r.neighborhood,
       cidade: r.city,
       uf: r.state,
+      criterios: eligibilityEntries(r)
+        .map(([q, a]) => `${q}: ${a}`)
+        .join(" | "),
+      respostas_forms: formAnswerEntries(r)
+        .map(([q, a]) => `${q.trim()}: ${String(a)}`)
+        .join(" | "),
+      token_validado: r.token_validated ? "sim" : "nao",
       google_forms_concluido: r.google_form_completed ? "sim" : "nao",
       data_cadastro: new Date(r.created_at).toLocaleString("pt-BR"),
       data_conclusao_forms: r.google_form_completed_at
         ? new Date(r.google_form_completed_at).toLocaleString("pt-BR")
         : "",
     }));
+
     if (rows.length === 0) {
       toast.error("Nada para exportar");
       return;
