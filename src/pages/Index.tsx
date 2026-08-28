@@ -153,12 +153,15 @@ const Index = () => {
       case "eligibility":
         return (
           <EligibilityStep
-            onEligible={() => goTo("personal")}
+            onEligible={(eligibility) =>
+              setState((s) => ({ ...s, eligibility, stage: "personal" }))
+            }
             onIneligible={(reason) =>
               setState((s) => ({ ...s, stage: "declined", declinedReason: reason }))
             }
           />
         );
+
       case "personal":
         return (
           <PersonalDataStep
