@@ -101,13 +101,9 @@ const Index = () => {
     supabase.from("survey_responses").insert({
         full_name: state.consent?.participantName || "Não informado",
         age: personalCheck.data.age,
-        nationality: "",
-        cep: "",
-        neighborhood: "",
         city: personalCheck.data.city,
         state: personalCheck.data.state,
         gender: personalCheck.data.gender,
-        phone: "",
         email: personalCheck.data.email || null,
         tracking_code: trackingCode,
         screening_answers: {
