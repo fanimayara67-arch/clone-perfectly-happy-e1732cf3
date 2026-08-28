@@ -100,8 +100,10 @@ const Index = () => {
           consent_date: state.consent?.consentDate || null,
           accepted_tcle: true,
         },
+        eligibility: state.eligibility || {},
       },
       main_answers: {},
+
       consent_given: true,
     };
 
