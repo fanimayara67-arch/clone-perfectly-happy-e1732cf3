@@ -42,18 +42,13 @@ import { cn } from "@/lib/utils";
 
 interface Response {
   id: string;
-  full_name: string;
+  full_name: string | null;
   age: number;
   email: string | null;
-  phone: string;
+  phone: string | null;
   city: string;
   state: string;
   gender: string;
-  nationality: string;
-  cep: string;
-  street: string | null;
-  number: string | null;
-  neighborhood: string;
   tracking_code: string | null;
   google_form_completed: boolean;
   google_form_completed_at: string | null;
@@ -62,6 +57,15 @@ interface Response {
   consent_given: boolean;
   screening_answers: Record<string, unknown>;
   main_answers: Record<string, unknown>;
+  created_at: string;
+}
+
+interface InvalidResponse {
+  id: string;
+  attempted_code: string | null;
+  reason: string | null;
+  form_submitted_at: string | null;
+  payload: Record<string, unknown>;
   created_at: string;
 }
 
@@ -77,6 +81,28 @@ const formAnswerEntries = (r: Response) =>
   );
 
 const hasFormAnswers = (r: Response) => formAnswerEntries(r).length > 0;
+
+const eligibilityEntries = (r: Response) => {
+  const el = (r.screening_answers as { eligibility?: Record<string, string> })?.eligibility;
+  return el ? Object.entries(el) : [];
+};
+
+const consentInfo = (r: Response) =>
+  (r.screening_answers as {
+    electronic_consent?: {
+      participant_name?: string | null;
+      identity_document?: string | null;
+      consent_city?: string | null;
+      consent_date?: string | null;
+      accepted_tcle?: boolean;
+    };
+  })?.electronic_consent || null;
+
+const displayName = (r: Response) =>
+  consentInfo(r)?.participant_name ||
+  (r.full_name && r.full_name !== "Não informado" ? r.full_name : null) ||
+  "Participante anônimo";
+
 
 
 
