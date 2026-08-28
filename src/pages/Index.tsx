@@ -28,9 +28,11 @@ interface FormState {
   stage: Stage;
   personal: Partial<PersonalData>;
   consent?: ConsentData;
+  eligibility?: Record<string, string>;
   declinedReason?: DeclinedReason;
   trackingCode?: string;
 }
+
 
 const initial: FormState = {
   stage: "consent",
