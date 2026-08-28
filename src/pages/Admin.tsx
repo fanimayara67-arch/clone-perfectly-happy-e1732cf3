@@ -344,6 +344,7 @@ const Admin = () => {
               <SelectItem value="all">Todos os status</SelectItem>
               <SelectItem value="completed">Concluídos</SelectItem>
               <SelectItem value="pending">Pendentes</SelectItem>
+              <SelectItem value="answers">Com respostas do Forms</SelectItem>
             </SelectContent>
           </Select>
           <Button onClick={exportCsv} variant="outline">
