@@ -28,9 +28,11 @@ interface FormState {
   stage: Stage;
   personal: Partial<PersonalData>;
   consent?: ConsentData;
+  eligibility?: Record<string, string>;
   declinedReason?: DeclinedReason;
   trackingCode?: string;
 }
+
 
 const initial: FormState = {
   stage: "consent",
@@ -98,8 +100,10 @@ const Index = () => {
           consent_date: state.consent?.consentDate || null,
           accepted_tcle: true,
         },
+        eligibility: state.eligibility || {},
       },
       main_answers: {},
+
       consent_given: true,
     };
 
@@ -153,12 +157,15 @@ const Index = () => {
       case "eligibility":
         return (
           <EligibilityStep
-            onEligible={() => goTo("personal")}
+            onEligible={(eligibility) =>
+              setState((s) => ({ ...s, eligibility, stage: "personal" }))
+            }
             onIneligible={(reason) =>
               setState((s) => ({ ...s, stage: "declined", declinedReason: reason }))
             }
           />
         );
+
       case "personal":
         return (
           <PersonalDataStep

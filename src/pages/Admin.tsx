@@ -42,18 +42,13 @@ import { cn } from "@/lib/utils";
 
 interface Response {
   id: string;
-  full_name: string;
+  full_name: string | null;
   age: number;
   email: string | null;
-  phone: string;
+  phone: string | null;
   city: string;
   state: string;
   gender: string;
-  nationality: string;
-  cep: string;
-  street: string | null;
-  number: string | null;
-  neighborhood: string;
   tracking_code: string | null;
   google_form_completed: boolean;
   google_form_completed_at: string | null;
@@ -62,6 +57,15 @@ interface Response {
   consent_given: boolean;
   screening_answers: Record<string, unknown>;
   main_answers: Record<string, unknown>;
+  created_at: string;
+}
+
+interface InvalidResponse {
+  id: string;
+  attempted_code: string | null;
+  reason: string | null;
+  form_submitted_at: string | null;
+  payload: Record<string, unknown>;
   created_at: string;
 }
 
@@ -78,20 +82,57 @@ const formAnswerEntries = (r: Response) =>
 
 const hasFormAnswers = (r: Response) => formAnswerEntries(r).length > 0;
 
+const eligibilityEntries = (r: Response) => {
+  const el = (r.screening_answers as { eligibility?: Record<string, string> })?.eligibility;
+  return el ? Object.entries(el) : [];
+};
+
+const consentInfo = (r: Response) =>
+  (r.screening_answers as {
+    electronic_consent?: {
+      participant_name?: string | null;
+      identity_document?: string | null;
+      consent_city?: string | null;
+      consent_date?: string | null;
+      accepted_tcle?: boolean;
+    };
+  })?.electronic_consent || null;
+
+const displayName = (r: Response) =>
+  consentInfo(r)?.participant_name ||
+  (r.full_name && r.full_name !== "Não informado" ? r.full_name : null) ||
+  "Participante anônimo";
+
+
 
 
 const Admin = () => {
   const { user, isAdmin, loading } = useAuth();
   const [responses, setResponses] = useState<Response[]>([]);
+  const [invalids, setInvalids] = useState<InvalidResponse[]>([]);
   const [fetching, setFetching] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "pending" | "answers">("all");
   const [selected, setSelected] = useState<Response | null>(null);
   const [showForms, setShowForms] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [invalidOpen, setInvalidOpen] = useState(false);
 
   const [helpOpen, setHelpOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+
+  const fetchAll = async () => {
+    const [{ data, error }, { data: inv }] = await Promise.all([
+      supabase.from("survey_responses").select("*").order("created_at", { ascending: false }),
+      supabase
+        .from("invalid_form_responses")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200),
+    ]);
+    if (inv) setInvalids(inv as unknown as InvalidResponse[]);
+    return { data: (data || []) as Response[], error };
+  };
 
   const syncGoogleForms = async () => {
     setSyncing(true);
@@ -106,12 +147,8 @@ const Admin = () => {
       toast.success(
         `Sincronizado: ${d.valid ?? 0} válidas, ${d.invalid ?? 0} inválidas (${d.processed ?? 0} processadas)`,
       );
-      // refresh
-      const { data: fresh } = await supabase
-        .from("survey_responses")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (fresh) setResponses(fresh as Response[]);
+      const { data: fresh } = await fetchAll();
+      setResponses(fresh);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(`Erro ao sincronizar: ${msg}`);
@@ -124,15 +161,12 @@ const Admin = () => {
     if (!user || !isAdmin) return;
 
     const load = async () => {
-      const { data, error } = await supabase
-        .from("survey_responses")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { data, error } = await fetchAll();
       if (error) {
         toast.error("Erro ao carregar respostas");
         console.error(error);
       } else {
-        setResponses((data || []) as Response[]);
+        setResponses(data);
       }
       setFetching(false);
     };
@@ -140,15 +174,11 @@ const Admin = () => {
 
     // Poll every 10s for new/updated responses (realtime disabled for security)
     const interval = setInterval(async () => {
-      const { data, error } = await supabase
-        .from("survey_responses")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { data: fresh, error } = await fetchAll();
       if (error) {
         console.error(error);
         return;
       }
-      const fresh = (data || []) as Response[];
       setResponses((prev) => {
         const prevIds = new Set(prev.map((r) => r.id));
         const newOnes = fresh.filter((r) => !prevIds.has(r.id));
@@ -156,7 +186,7 @@ const Admin = () => {
           const first = newOnes[0];
           setHighlightId(first.id);
           setTimeout(() => setHighlightId(null), 3000);
-          toast.success(`Nova resposta: ${first.full_name}`, {
+          toast.success(`Nova resposta: ${displayName(first)}`, {
             description: first.tracking_code || "sem código",
           });
         }
@@ -165,7 +195,7 @@ const Admin = () => {
         for (const r of fresh) {
           const old = prevById.get(r.id);
           if (old && !old.google_form_completed && r.google_form_completed) {
-            toast.info(`${r.full_name} concluiu o Google Forms`);
+            toast.info(`${displayName(r)} concluiu o Google Forms`);
           }
         }
         return fresh;
@@ -177,6 +207,7 @@ const Admin = () => {
     };
   }, [user, isAdmin]);
 
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return responses.filter((r) => {
@@ -185,10 +216,10 @@ const Admin = () => {
       if (statusFilter === "answers" && !hasFormAnswers(r)) return false;
       if (!q) return true;
       return (
-        r.full_name.toLowerCase().includes(q) ||
+        displayName(r).toLowerCase().includes(q) ||
         (r.tracking_code || "").toLowerCase().includes(q) ||
         (r.email || "").toLowerCase().includes(q) ||
-        r.city.toLowerCase().includes(q)
+        (r.city || "").toLowerCase().includes(q)
       );
     });
   }, [responses, search, statusFilter]);
@@ -196,11 +227,13 @@ const Admin = () => {
   const stats = useMemo(() => {
     const total = responses.length;
     const completed = responses.filter((r) => r.google_form_completed).length;
+    const withAnswers = responses.filter(hasFormAnswers).length;
     const pending = total - completed;
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     const last24h = responses.filter((r) => new Date(r.created_at).getTime() > cutoff).length;
-    return { total, completed, pending, last24h };
+    return { total, completed, pending, last24h, withAnswers };
   }, [responses]);
+
 
   if (loading) {
     return (
@@ -222,24 +255,27 @@ const Admin = () => {
   const exportCsv = () => {
     const rows = filtered.map((r) => ({
       codigo: r.tracking_code || "",
-      nome: r.full_name,
+      nome: displayName(r),
+      documento: consentInfo(r)?.identity_document || "",
       idade: r.age,
       genero: r.gender,
       email: r.email || "",
-      telefone: r.phone,
-      nacionalidade: r.nationality,
-      cep: r.cep,
-      rua: r.street || "",
-      numero: r.number || "",
-      bairro: r.neighborhood,
       cidade: r.city,
       uf: r.state,
+      criterios: eligibilityEntries(r)
+        .map(([q, a]) => `${q}: ${a}`)
+        .join(" | "),
+      respostas_forms: formAnswerEntries(r)
+        .map(([q, a]) => `${q.trim()}: ${String(a)}`)
+        .join(" | "),
+      token_validado: r.token_validated ? "sim" : "nao",
       google_forms_concluido: r.google_form_completed ? "sim" : "nao",
       data_cadastro: new Date(r.created_at).toLocaleString("pt-BR"),
       data_conclusao_forms: r.google_form_completed_at
         ? new Date(r.google_form_completed_at).toLocaleString("pt-BR")
         : "",
     }));
+
     if (rows.length === 0) {
       toast.error("Nada para exportar");
       return;
@@ -308,7 +344,7 @@ const Admin = () => {
 
       <main className="max-w-7xl mx-auto px-4 py-5 space-y-5">
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <StatCard icon={<Users className="h-4 w-4" />} label="Total" value={stats.total} />
           <StatCard
             icon={<CheckCircle2 className="h-4 w-4" />}
@@ -322,8 +358,31 @@ const Admin = () => {
             value={stats.pending}
             tone="warn"
           />
+          <StatCard
+            icon={<FileText className="h-4 w-4" />}
+            label="Com respostas"
+            value={stats.withAnswers}
+          />
           <StatCard icon={<Activity className="h-4 w-4" />} label="Últimas 24h" value={stats.last24h} />
         </div>
+
+        {invalids.length > 0 && (
+          <button
+            onClick={() => setInvalidOpen(true)}
+            className="w-full text-left bg-destructive/5 border border-destructive/30 rounded-2xl p-4 flex items-center gap-3 hover:bg-destructive/10 transition-smooth"
+          >
+            <ShieldAlert className="h-5 w-5 text-destructive shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-destructive">
+                {invalids.length} resposta(s) do Google Forms com código inválido
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Clique para revisar os envios que não puderam ser vinculados a um participante.
+              </p>
+            </div>
+          </button>
+        )}
+
 
         {/* Filters */}
         <div className="bg-card rounded-2xl p-4 shadow-card border border-border/60 flex flex-col sm:flex-row gap-3">
@@ -369,12 +428,14 @@ const Admin = () => {
                 <thead className="bg-secondary/50 border-b border-border/60">
                   <tr className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     <th className="px-4 py-3">Código</th>
-                    <th className="px-4 py-3">Nome</th>
+                    <th className="px-4 py-3">Participante</th>
                     <th className="px-4 py-3 hidden sm:table-cell">Cidade/UF</th>
-                    <th className="px-4 py-3 hidden md:table-cell">Contato</th>
+                    <th className="px-4 py-3 hidden md:table-cell">E-mail</th>
+                    <th className="px-4 py-3 hidden md:table-cell">Respostas</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 hidden lg:table-cell">Data</th>
                     <th className="px-4 py-3"></th>
+
                   </tr>
                 </thead>
                 <tbody>
@@ -401,7 +462,7 @@ const Admin = () => {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-semibold text-foreground">{r.full_name}</div>
+                        <div className="font-semibold text-foreground">{displayName(r)}</div>
                         <div className="text-xs text-muted-foreground">
                           {r.age} anos · {r.gender}
                         </div>
@@ -410,9 +471,22 @@ const Admin = () => {
                         {r.city}/{r.state}
                       </td>
                       <td className="px-4 py-3 hidden md:table-cell text-xs text-muted-foreground">
-                        <div>{r.phone}</div>
-                        {r.email && <div className="truncate max-w-[180px]">{r.email}</div>}
+                        {r.email ? (
+                          <span className="truncate max-w-[180px] block">{r.email}</span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
+                      <td className="px-4 py-3 hidden md:table-cell text-xs">
+                        {hasFormAnswers(r) ? (
+                          <span className="font-semibold text-primary">
+                            {formAnswerEntries(r).length}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-1 items-start">
                           {r.google_form_completed ? (
@@ -481,8 +555,9 @@ const Admin = () => {
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {selected?.full_name || "Detalhes da resposta"}
+              {selected ? displayName(selected) : "Detalhes da resposta"}
             </DialogTitle>
+
           </DialogHeader>
           {selected && (
             <div className="space-y-4 text-sm">
@@ -546,23 +621,105 @@ const Admin = () => {
                           : "Pendente"
                       }
                     />
+                    <Field
+                      label="Token"
+                      value={
+                        selected.token_validated
+                          ? `Validado em ${new Date(selected.token_validated_at!).toLocaleString("pt-BR")}`
+                          : "Não validado"
+                      }
+                    />
                     <Field label="Cadastrado em" value={new Date(selected.created_at).toLocaleString("pt-BR")} />
                   </Section>
 
                   <Section title="Dados pessoais">
-                    <Field label="Nome" value={selected.full_name || "—"} />
                     <Field label="Idade" value={String(selected.age)} />
                     <Field label="Gênero" value={selected.gender} />
-                    <Field label="Email" value={selected.email || "—"} />
+                    <Field label="E-mail" value={selected.email || "—"} />
                     <Field label="Cidade/UF" value={`${selected.city}/${selected.state}`} />
+                  </Section>
+
+                  <Section title="Termo de consentimento (TCLE)">
+                    <Field
+                      label="Nome informado"
+                      value={consentInfo(selected)?.participant_name || "—"}
+                    />
+                    <Field
+                      label="Documento"
+                      value={consentInfo(selected)?.identity_document || "—"}
+                    />
+                    <Field label="Cidade" value={consentInfo(selected)?.consent_city || "—"} />
+                    <Field label="Data" value={consentInfo(selected)?.consent_date || "—"} />
+                    <Field
+                      label="Aceite"
+                      value={selected.consent_given ? "Aceitou o TCLE" : "Não aceitou"}
+                    />
+                  </Section>
+
+                  <Section title="Critérios de elegibilidade">
+                    {eligibilityEntries(selected).length > 0 ? (
+                      <div className="space-y-2">
+                        {eligibilityEntries(selected).map(([q, a]) => (
+                          <div key={q} className="flex justify-between gap-3 items-start">
+                            <span className="text-xs text-muted-foreground">{q}</span>
+                            <span className="text-sm font-semibold shrink-0">{a}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Sem registro de critérios (cadastro anterior a esta atualização).
+                      </p>
+                    )}
                   </Section>
                 </>
               )}
             </div>
-
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Invalid form responses dialog */}
+      <Dialog open={invalidOpen} onOpenChange={setInvalidOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Respostas do Forms sem participante</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {invalids.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhuma resposta inválida.</p>
+            ) : (
+              invalids.map((iv) => (
+                <div key={iv.id} className="rounded-xl border border-border/60 p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-bold text-destructive">
+                      {iv.attempted_code || "sem código"}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {new Date(iv.form_submitted_at || iv.created_at).toLocaleString("pt-BR")}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{iv.reason || "Código não reconhecido"}</p>
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-primary">Ver respostas enviadas</summary>
+                    <div className="mt-2 space-y-1.5">
+                      {Object.entries(iv.payload || {})
+                        .filter(([, v]) => String(v ?? "").trim() !== "")
+                        .map(([q, v]) => (
+                          <div key={q}>
+                            <p className="text-muted-foreground">{q.trim()}</p>
+                            <p className="font-semibold text-foreground">{String(v)}</p>
+                          </div>
+                        ))}
+                    </div>
+                  </details>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
 
       {/* Help dialog */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
