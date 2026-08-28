@@ -211,10 +211,10 @@ const Admin = () => {
       if (statusFilter === "answers" && !hasFormAnswers(r)) return false;
       if (!q) return true;
       return (
-        r.full_name.toLowerCase().includes(q) ||
+        displayName(r).toLowerCase().includes(q) ||
         (r.tracking_code || "").toLowerCase().includes(q) ||
         (r.email || "").toLowerCase().includes(q) ||
-        r.city.toLowerCase().includes(q)
+        (r.city || "").toLowerCase().includes(q)
       );
     });
   }, [responses, search, statusFilter]);
@@ -222,11 +222,13 @@ const Admin = () => {
   const stats = useMemo(() => {
     const total = responses.length;
     const completed = responses.filter((r) => r.google_form_completed).length;
+    const withAnswers = responses.filter(hasFormAnswers).length;
     const pending = total - completed;
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     const last24h = responses.filter((r) => new Date(r.created_at).getTime() > cutoff).length;
-    return { total, completed, pending, last24h };
+    return { total, completed, pending, last24h, withAnswers };
   }, [responses]);
+
 
   if (loading) {
     return (
