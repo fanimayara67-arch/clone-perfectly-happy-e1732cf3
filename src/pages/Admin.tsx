@@ -344,7 +344,7 @@ const Admin = () => {
 
       <main className="max-w-7xl mx-auto px-4 py-5 space-y-5">
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <StatCard icon={<Users className="h-4 w-4" />} label="Total" value={stats.total} />
           <StatCard
             icon={<CheckCircle2 className="h-4 w-4" />}
@@ -358,8 +358,31 @@ const Admin = () => {
             value={stats.pending}
             tone="warn"
           />
+          <StatCard
+            icon={<FileText className="h-4 w-4" />}
+            label="Com respostas"
+            value={stats.withAnswers}
+          />
           <StatCard icon={<Activity className="h-4 w-4" />} label="Últimas 24h" value={stats.last24h} />
         </div>
+
+        {invalids.length > 0 && (
+          <button
+            onClick={() => setInvalidOpen(true)}
+            className="w-full text-left bg-destructive/5 border border-destructive/30 rounded-2xl p-4 flex items-center gap-3 hover:bg-destructive/10 transition-smooth"
+          >
+            <ShieldAlert className="h-5 w-5 text-destructive shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-destructive">
+                {invalids.length} resposta(s) do Google Forms com código inválido
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Clique para revisar os envios que não puderam ser vinculados a um participante.
+              </p>
+            </div>
+          </button>
+        )}
+
 
         {/* Filters */}
         <div className="bg-card rounded-2xl p-4 shadow-card border border-border/60 flex flex-col sm:flex-row gap-3">
