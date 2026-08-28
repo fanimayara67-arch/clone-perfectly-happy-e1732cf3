@@ -85,7 +85,7 @@ const Admin = () => {
   const [responses, setResponses] = useState<Response[]>([]);
   const [fetching, setFetching] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "pending">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "pending" | "answers">("all");
   const [selected, setSelected] = useState<Response | null>(null);
   const [showForms, setShowForms] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
