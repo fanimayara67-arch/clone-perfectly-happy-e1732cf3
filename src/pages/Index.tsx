@@ -114,34 +114,49 @@ const Index = () => {
     toast.success("Pesquisa liberada. Pode responder o Google Forms.");
     goTo("googleForm");
 
-
-    supabase.from("survey_responses").insert({
-        full_name: state.consent?.participantName || "Não informado",
-        age: personalCheck.data.age,
-        city: personalCheck.data.city,
-        state: personalCheck.data.state,
-        gender: personalCheck.data.gender,
-        email: personalCheck.data.email || null,
-        tracking_code: trackingCode,
-        screening_answers: {
-          electronic_consent: {
-            participant_name: state.consent?.participantName || null,
-            identity_document: state.consent?.identityDocument || null,
-            consent_city: state.consent?.consentCity || null,
-            consent_date: state.consent?.consentDate || null,
-            accepted_tcle: true,
-          },
+    const payload = {
+      full_name: state.consent?.participantName || "Não informado",
+      age: personalCheck.data.age,
+      city: personalCheck.data.city,
+      state: personalCheck.data.state,
+      gender: personalCheck.data.gender,
+      email: personalCheck.data.email || null,
+      tracking_code: trackingCode,
+      screening_answers: {
+        electronic_consent: {
+          participant_name: state.consent?.participantName || null,
+          identity_document: state.consent?.identityDocument || null,
+          consent_city: state.consent?.consentCity || null,
+          consent_date: state.consent?.consentDate || null,
+          accepted_tcle: true,
         },
-        main_answers: {},
-        consent_given: true,
-      }).then(({ error }) => {
-        if (error) {
-          console.error(error);
-          toast.error("A pesquisa abriu, mas houve erro ao salvar os dados iniciais.");
+      },
+      main_answers: {},
+      consent_given: true,
+    };
+
+    let saved = false;
+    let saveError: unknown = null;
+    for (let attempt = 0; attempt < 3 && !saved; attempt++) {
+      try {
+        const { error } = await supabase.from("survey_responses").insert(payload);
+        if (!error) {
+          saved = true;
+          break;
         }
-      }).then(() => {
-        setSubmitting(false);
-      });
+        saveError = error;
+      } catch (e) {
+        saveError = e;
+      }
+      await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+    }
+
+    if (!saved) {
+      console.error("Falha ao salvar resposta inicial", saveError);
+      toast.error("Seus dados iniciais não foram salvos, mas você já pode responder a pesquisa.");
+    }
+    setSubmitting(false);
+
   };
 
   const restart = () => {
