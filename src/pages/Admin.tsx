@@ -555,8 +555,9 @@ const Admin = () => {
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {selected?.full_name || "Detalhes da resposta"}
+              {selected ? displayName(selected) : "Detalhes da resposta"}
             </DialogTitle>
+
           </DialogHeader>
           {selected && (
             <div className="space-y-4 text-sm">
