@@ -176,13 +176,6 @@ export type Database = {
         Args: { _tracking_code: string }
         Returns: boolean
       }
-      has_role: {
-        Args: {
-          _role: Database["public"]["Enums"]["app_role"]
-          _user_id: string
-        }
-        Returns: boolean
-      }
       mark_google_form_completed: {
         Args: { _tracking_code: string }
         Returns: boolean
