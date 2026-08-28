@@ -65,6 +65,21 @@ interface Response {
   created_at: string;
 }
 
+const IGNORED_FORM_KEYS = /^(carimbo de data\/hora|timestamp|anulado)$/i;
+const CODE_FORM_KEY = /(c[oó]digo|autentica|token)/i;
+
+const formAnswerEntries = (r: Response) =>
+  Object.entries(r.main_answers || {}).filter(
+    ([k, v]) =>
+      !IGNORED_FORM_KEYS.test(k.trim()) &&
+      !CODE_FORM_KEY.test(k) &&
+      String(v ?? "").trim() !== "",
+  );
+
+const hasFormAnswers = (r: Response) => formAnswerEntries(r).length > 0;
+
+
+
 const Admin = () => {
   const { user, isAdmin, loading } = useAuth();
   const [responses, setResponses] = useState<Response[]>([]);
