@@ -297,10 +297,73 @@ const Admin = () => {
     toast.success(`Exportado: ${rows.length} respostas`);
   };
 
+  const openEdit = (r: Response) => {
+    setEditing(r);
+    setEditForm({
+      full_name: r.full_name ?? "",
+      age: String(r.age ?? ""),
+      email: r.email ?? "",
+      city: r.city ?? "",
+      state: r.state ?? "",
+      gender: r.gender ?? "",
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    const age = Number(editForm.age);
+    if (!Number.isFinite(age) || age <= 0) {
+      toast.error("Idade inválida");
+      return;
+    }
+    if (!editForm.city.trim() || !editForm.state.trim() || !editForm.gender.trim()) {
+      toast.error("Cidade, UF e gênero são obrigatórios");
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase
+      .from("survey_responses")
+      .update({
+        full_name: editForm.full_name.trim() || null,
+        age,
+        email: editForm.email.trim() || null,
+        city: editForm.city.trim(),
+        state: editForm.state.trim(),
+        gender: editForm.gender.trim(),
+      })
+      .eq("id", editing.id);
+    setSaving(false);
+    if (error) {
+      toast.error("Não foi possível salvar: " + error.message);
+      return;
+    }
+    toast.success("Cadastro atualizado");
+    setEditing(null);
+    const { data: fresh } = await fetchAll();
+    if (fresh) setResponses(fresh as Response[]);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    setSaving(true);
+    const { error } = await supabase.from("survey_responses").delete().eq("id", deleting.id);
+    setSaving(false);
+    if (error) {
+      toast.error("Não foi possível excluir: " + error.message);
+      return;
+    }
+    toast.success("Registro excluído");
+    setDeleting(null);
+    setSelected(null);
+    const { data: fresh } = await fetchAll();
+    if (fresh) setResponses(fresh as Response[]);
+  };
+
   const logout = async () => {
     await supabase.auth.signOut();
     toast.success("Você saiu");
   };
+
 
   return (
     <div className="min-h-screen bg-gradient-soft">
