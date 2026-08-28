@@ -418,10 +418,34 @@ const Admin = () => {
                         {new Date(r.created_at).toLocaleString("pt-BR")}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Button size="sm" variant="ghost" onClick={() => setSelected(r)}>
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {hasFormAnswers(r) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 gap-1 text-xs"
+                              onClick={() => {
+                                setSelected(r);
+                                setShowForms(true);
+                              }}
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                              <span className="hidden sm:inline">Respostas</span>
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setSelected(r);
+                              setShowForms(false);
+                            }}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </td>
+
                     </tr>
                   ))}
                 </tbody>
