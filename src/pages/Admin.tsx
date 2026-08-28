@@ -12,11 +12,14 @@ import {
   HelpCircle,
   Loader2,
   LogOut,
+  Pencil,
   RefreshCw,
   Search,
   ShieldCheck,
   ShieldAlert,
+  Trash2,
   Users,
+
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
