@@ -405,12 +405,14 @@ const Admin = () => {
                 <thead className="bg-secondary/50 border-b border-border/60">
                   <tr className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     <th className="px-4 py-3">Código</th>
-                    <th className="px-4 py-3">Nome</th>
+                    <th className="px-4 py-3">Participante</th>
                     <th className="px-4 py-3 hidden sm:table-cell">Cidade/UF</th>
-                    <th className="px-4 py-3 hidden md:table-cell">Contato</th>
+                    <th className="px-4 py-3 hidden md:table-cell">E-mail</th>
+                    <th className="px-4 py-3 hidden md:table-cell">Respostas</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 hidden lg:table-cell">Data</th>
                     <th className="px-4 py-3"></th>
+
                   </tr>
                 </thead>
                 <tbody>
