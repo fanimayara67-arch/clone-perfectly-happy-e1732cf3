@@ -772,8 +772,88 @@ const Admin = () => {
               )}
             </div>
           )}
+          {selected && (
+            <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-border/60">
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => openEdit(selected)}>
+                <Pencil className="h-3.5 w-3.5" /> Editar
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="gap-1"
+                onClick={() => setDeleting(selected)}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Excluir
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
+
+      {/* Edit dialog */}
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar cadastro</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {[
+              { key: "full_name" as const, label: "Nome", type: "text" },
+              { key: "age" as const, label: "Idade", type: "number" },
+              { key: "email" as const, label: "E-mail", type: "email" },
+              { key: "city" as const, label: "Cidade", type: "text" },
+              { key: "state" as const, label: "UF", type: "text" },
+              { key: "gender" as const, label: "Gênero", type: "text" },
+            ].map((f) => (
+              <div key={f.key} className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">{f.label}</label>
+                <Input
+                  type={f.type}
+                  value={editForm[f.key]}
+                  onChange={(e) => setEditForm((s) => ({ ...s, [f.key]: e.target.value }))}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setEditing(null)} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button onClick={saveEdit} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir este registro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O cadastro de {deleting ? displayName(deleting) : ""}
+              {deleting?.tracking_code ? ` (${deleting.tracking_code})` : ""} será removido
+              permanentemente. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDelete();
+              }}
+              disabled={saving}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {saving ? "Excluindo..." : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+
 
       {/* Invalid form responses dialog */}
       <Dialog open={invalidOpen} onOpenChange={setInvalidOpen}>
