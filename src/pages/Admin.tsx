@@ -621,23 +621,105 @@ const Admin = () => {
                           : "Pendente"
                       }
                     />
+                    <Field
+                      label="Token"
+                      value={
+                        selected.token_validated
+                          ? `Validado em ${new Date(selected.token_validated_at!).toLocaleString("pt-BR")}`
+                          : "Não validado"
+                      }
+                    />
                     <Field label="Cadastrado em" value={new Date(selected.created_at).toLocaleString("pt-BR")} />
                   </Section>
 
                   <Section title="Dados pessoais">
-                    <Field label="Nome" value={selected.full_name || "—"} />
                     <Field label="Idade" value={String(selected.age)} />
                     <Field label="Gênero" value={selected.gender} />
-                    <Field label="Email" value={selected.email || "—"} />
+                    <Field label="E-mail" value={selected.email || "—"} />
                     <Field label="Cidade/UF" value={`${selected.city}/${selected.state}`} />
+                  </Section>
+
+                  <Section title="Termo de consentimento (TCLE)">
+                    <Field
+                      label="Nome informado"
+                      value={consentInfo(selected)?.participant_name || "—"}
+                    />
+                    <Field
+                      label="Documento"
+                      value={consentInfo(selected)?.identity_document || "—"}
+                    />
+                    <Field label="Cidade" value={consentInfo(selected)?.consent_city || "—"} />
+                    <Field label="Data" value={consentInfo(selected)?.consent_date || "—"} />
+                    <Field
+                      label="Aceite"
+                      value={selected.consent_given ? "Aceitou o TCLE" : "Não aceitou"}
+                    />
+                  </Section>
+
+                  <Section title="Critérios de elegibilidade">
+                    {eligibilityEntries(selected).length > 0 ? (
+                      <div className="space-y-2">
+                        {eligibilityEntries(selected).map(([q, a]) => (
+                          <div key={q} className="flex justify-between gap-3 items-start">
+                            <span className="text-xs text-muted-foreground">{q}</span>
+                            <span className="text-sm font-semibold shrink-0">{a}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Sem registro de critérios (cadastro anterior a esta atualização).
+                      </p>
+                    )}
                   </Section>
                 </>
               )}
             </div>
-
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Invalid form responses dialog */}
+      <Dialog open={invalidOpen} onOpenChange={setInvalidOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Respostas do Forms sem participante</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {invalids.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhuma resposta inválida.</p>
+            ) : (
+              invalids.map((iv) => (
+                <div key={iv.id} className="rounded-xl border border-border/60 p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-bold text-destructive">
+                      {iv.attempted_code || "sem código"}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {new Date(iv.form_submitted_at || iv.created_at).toLocaleString("pt-BR")}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{iv.reason || "Código não reconhecido"}</p>
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-primary">Ver respostas enviadas</summary>
+                    <div className="mt-2 space-y-1.5">
+                      {Object.entries(iv.payload || {})
+                        .filter(([, v]) => String(v ?? "").trim() !== "")
+                        .map(([q, v]) => (
+                          <div key={q}>
+                            <p className="text-muted-foreground">{q.trim()}</p>
+                            <p className="font-semibold text-foreground">{String(v)}</p>
+                          </div>
+                        ))}
+                    </div>
+                  </details>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
 
       {/* Help dialog */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
