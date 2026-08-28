@@ -109,15 +109,30 @@ const displayName = (r: Response) =>
 const Admin = () => {
   const { user, isAdmin, loading } = useAuth();
   const [responses, setResponses] = useState<Response[]>([]);
+  const [invalids, setInvalids] = useState<InvalidResponse[]>([]);
   const [fetching, setFetching] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "pending" | "answers">("all");
   const [selected, setSelected] = useState<Response | null>(null);
   const [showForms, setShowForms] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [invalidOpen, setInvalidOpen] = useState(false);
 
   const [helpOpen, setHelpOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+
+  const fetchAll = async () => {
+    const [{ data, error }, { data: inv }] = await Promise.all([
+      supabase.from("survey_responses").select("*").order("created_at", { ascending: false }),
+      supabase
+        .from("invalid_form_responses")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200),
+    ]);
+    if (inv) setInvalids(inv as unknown as InvalidResponse[]);
+    return { data: (data || []) as Response[], error };
+  };
 
   const syncGoogleForms = async () => {
     setSyncing(true);
@@ -132,12 +147,8 @@ const Admin = () => {
       toast.success(
         `Sincronizado: ${d.valid ?? 0} válidas, ${d.invalid ?? 0} inválidas (${d.processed ?? 0} processadas)`,
       );
-      // refresh
-      const { data: fresh } = await supabase
-        .from("survey_responses")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (fresh) setResponses(fresh as Response[]);
+      const { data: fresh } = await fetchAll();
+      setResponses(fresh);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(`Erro ao sincronizar: ${msg}`);
@@ -150,15 +161,12 @@ const Admin = () => {
     if (!user || !isAdmin) return;
 
     const load = async () => {
-      const { data, error } = await supabase
-        .from("survey_responses")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { data, error } = await fetchAll();
       if (error) {
         toast.error("Erro ao carregar respostas");
         console.error(error);
       } else {
-        setResponses((data || []) as Response[]);
+        setResponses(data);
       }
       setFetching(false);
     };
@@ -166,15 +174,11 @@ const Admin = () => {
 
     // Poll every 10s for new/updated responses (realtime disabled for security)
     const interval = setInterval(async () => {
-      const { data, error } = await supabase
-        .from("survey_responses")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { data: fresh, error } = await fetchAll();
       if (error) {
         console.error(error);
         return;
       }
-      const fresh = (data || []) as Response[];
       setResponses((prev) => {
         const prevIds = new Set(prev.map((r) => r.id));
         const newOnes = fresh.filter((r) => !prevIds.has(r.id));
@@ -182,7 +186,7 @@ const Admin = () => {
           const first = newOnes[0];
           setHighlightId(first.id);
           setTimeout(() => setHighlightId(null), 3000);
-          toast.success(`Nova resposta: ${first.full_name}`, {
+          toast.success(`Nova resposta: ${displayName(first)}`, {
             description: first.tracking_code || "sem código",
           });
         }
@@ -191,7 +195,7 @@ const Admin = () => {
         for (const r of fresh) {
           const old = prevById.get(r.id);
           if (old && !old.google_form_completed && r.google_form_completed) {
-            toast.info(`${r.full_name} concluiu o Google Forms`);
+            toast.info(`${displayName(r)} concluiu o Google Forms`);
           }
         }
         return fresh;
@@ -202,6 +206,7 @@ const Admin = () => {
       clearInterval(interval);
     };
   }, [user, isAdmin]);
+
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
