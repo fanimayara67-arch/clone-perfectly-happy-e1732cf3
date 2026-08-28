@@ -613,6 +613,24 @@ const Admin = () => {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Editar cadastro"
+                            onClick={() => openEdit(r)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Excluir cadastro"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setDeleting(r)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+
                         </div>
                       </td>
 
