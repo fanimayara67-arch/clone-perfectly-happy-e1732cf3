@@ -120,6 +120,18 @@ const Admin = () => {
 
   const [helpOpen, setHelpOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [editing, setEditing] = useState<Response | null>(null);
+  const [deleting, setDeleting] = useState<Response | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    full_name: "",
+    age: "",
+    email: "",
+    city: "",
+    state: "",
+    gender: "",
+  });
+
 
   const fetchAll = async () => {
     const [{ data, error }, { data: inv }] = await Promise.all([
