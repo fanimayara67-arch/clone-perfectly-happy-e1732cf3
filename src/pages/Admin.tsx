@@ -12,16 +12,30 @@ import {
   HelpCircle,
   Loader2,
   LogOut,
+  Pencil,
   RefreshCw,
   Search,
   ShieldCheck,
   ShieldAlert,
+  Trash2,
   Users,
+
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
 import {
   Dialog,
   DialogContent,
@@ -120,6 +134,18 @@ const Admin = () => {
 
   const [helpOpen, setHelpOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [editing, setEditing] = useState<Response | null>(null);
+  const [deleting, setDeleting] = useState<Response | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    full_name: "",
+    age: "",
+    email: "",
+    city: "",
+    state: "",
+    gender: "",
+  });
+
 
   const fetchAll = async () => {
     const [{ data, error }, { data: inv }] = await Promise.all([
@@ -297,10 +323,73 @@ const Admin = () => {
     toast.success(`Exportado: ${rows.length} respostas`);
   };
 
+  const openEdit = (r: Response) => {
+    setEditing(r);
+    setEditForm({
+      full_name: r.full_name ?? "",
+      age: String(r.age ?? ""),
+      email: r.email ?? "",
+      city: r.city ?? "",
+      state: r.state ?? "",
+      gender: r.gender ?? "",
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    const age = Number(editForm.age);
+    if (!Number.isFinite(age) || age <= 0) {
+      toast.error("Idade inválida");
+      return;
+    }
+    if (!editForm.city.trim() || !editForm.state.trim() || !editForm.gender.trim()) {
+      toast.error("Cidade, UF e gênero são obrigatórios");
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase
+      .from("survey_responses")
+      .update({
+        full_name: editForm.full_name.trim() || null,
+        age,
+        email: editForm.email.trim() || null,
+        city: editForm.city.trim(),
+        state: editForm.state.trim(),
+        gender: editForm.gender.trim(),
+      })
+      .eq("id", editing.id);
+    setSaving(false);
+    if (error) {
+      toast.error("Não foi possível salvar: " + error.message);
+      return;
+    }
+    toast.success("Cadastro atualizado");
+    setEditing(null);
+    const { data: fresh } = await fetchAll();
+    if (fresh) setResponses(fresh as Response[]);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    setSaving(true);
+    const { error } = await supabase.from("survey_responses").delete().eq("id", deleting.id);
+    setSaving(false);
+    if (error) {
+      toast.error("Não foi possível excluir: " + error.message);
+      return;
+    }
+    toast.success("Registro excluído");
+    setDeleting(null);
+    setSelected(null);
+    const { data: fresh } = await fetchAll();
+    if (fresh) setResponses(fresh as Response[]);
+  };
+
   const logout = async () => {
     await supabase.auth.signOut();
     toast.success("Você saiu");
   };
+
 
   return (
     <div className="min-h-screen bg-gradient-soft">
@@ -538,6 +627,24 @@ const Admin = () => {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Editar cadastro"
+                            onClick={() => openEdit(r)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Excluir cadastro"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setDeleting(r)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+
                         </div>
                       </td>
 
@@ -676,8 +783,88 @@ const Admin = () => {
               )}
             </div>
           )}
+          {selected && (
+            <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-border/60">
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => openEdit(selected)}>
+                <Pencil className="h-3.5 w-3.5" /> Editar
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="gap-1"
+                onClick={() => setDeleting(selected)}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Excluir
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
+
+      {/* Edit dialog */}
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar cadastro</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {[
+              { key: "full_name" as const, label: "Nome", type: "text" },
+              { key: "age" as const, label: "Idade", type: "number" },
+              { key: "email" as const, label: "E-mail", type: "email" },
+              { key: "city" as const, label: "Cidade", type: "text" },
+              { key: "state" as const, label: "UF", type: "text" },
+              { key: "gender" as const, label: "Gênero", type: "text" },
+            ].map((f) => (
+              <div key={f.key} className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">{f.label}</label>
+                <Input
+                  type={f.type}
+                  value={editForm[f.key]}
+                  onChange={(e) => setEditForm((s) => ({ ...s, [f.key]: e.target.value }))}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setEditing(null)} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button onClick={saveEdit} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir este registro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O cadastro de {deleting ? displayName(deleting) : ""}
+              {deleting?.tracking_code ? ` (${deleting.tracking_code})` : ""} será removido
+              permanentemente. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDelete();
+              }}
+              disabled={saving}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {saving ? "Excluindo..." : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+
 
       {/* Invalid form responses dialog */}
       <Dialog open={invalidOpen} onOpenChange={setInvalidOpen}>
