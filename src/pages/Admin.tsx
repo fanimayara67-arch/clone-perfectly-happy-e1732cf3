@@ -72,7 +72,9 @@ const Admin = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "pending">("all");
   const [selected, setSelected] = useState<Response | null>(null);
+  const [showForms, setShowForms] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
+
   const [helpOpen, setHelpOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
