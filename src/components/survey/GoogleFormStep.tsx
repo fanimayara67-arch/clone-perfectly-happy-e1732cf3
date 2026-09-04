@@ -3,7 +3,6 @@ import { Copy, ExternalLink, Loader2, KeyRound, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PersonalData } from "@/components/survey/PersonalDataStep";
 import { createGoogleFormUrl } from "@/lib/google-forms";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 interface GoogleFormStepProps {
@@ -31,15 +30,13 @@ export const GoogleFormStep = ({ personal, trackingCode, onDone }: GoogleFormSte
     }
   };
 
-  const handleDone = async () => {
+  // A conclusão não é marcada aqui: mark_google_form_completed é revogada para anon
+  // (migration 20260429211029) e toda chamada voltava 42501. Quem marca de verdade
+  // é confirm_response_with_token, chamada pela edge function sync-google-form-responses
+  // com service_role quando a resposta aparece na planilha — e essa fonte é confiável,
+  // pois depende do envio real do formulário, não do clique neste botão.
+  const handleDone = () => {
     setFinishing(true);
-    if (trackingCode) {
-      const { error } = await supabase.rpc("mark_google_form_completed", {
-        _tracking_code: trackingCode,
-      });
-      if (error) console.error(error);
-    }
-    setFinishing(false);
     onDone();
   };
 
