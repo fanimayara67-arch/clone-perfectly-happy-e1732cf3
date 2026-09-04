@@ -39,6 +39,32 @@ const initial: FormState = {
   personal: {},
 };
 
+interface SaveError {
+  code?: string;
+  message?: string;
+}
+
+const asSaveError = (e: unknown): SaveError =>
+  typeof e === "object" && e !== null ? (e as SaveError) : {};
+
+const isDuplicateOfThisResponse = (e: unknown) => {
+  const { code, message } = asSaveError(e);
+  return code === "23505" && (message ?? "").includes("tracking_code");
+};
+
+// Só falha de rede (sem code) ou erro de servidor justificam nova tentativa.
+const isRetriable = (e: unknown) => {
+  const { code } = asSaveError(e);
+  return !code || code.startsWith("5") || code === "PGRST301";
+};
+
+// A mensagem antiga culpava a conexão em qualquer falha, escondendo a causa real.
+const describeError = (e: unknown) => {
+  const { code, message } = asSaveError(e);
+  const detail = message ?? String(e ?? "erro desconhecido");
+  return code ? detail + " (" + code + ")" : detail;
+};
+
 const Index = () => {
   const [state, setState] = useState<FormState>(initial);
   const [personalValid, setPersonalValid] = useState(false);
@@ -112,20 +138,30 @@ const Index = () => {
     for (let attempt = 0; attempt < 3 && !saved; attempt++) {
       try {
         const { error } = await supabase.from("survey_responses").insert(payload);
-        if (!error) {
+        // O tracking_code é único e gerado uma única vez, então serve de chave de
+        // idempotência: 23505 nele significa que uma tentativa anterior já gravou
+        // esta resposta e só a confirmação se perdeu no caminho.
+        if (!error || isDuplicateOfThisResponse(error)) {
           saved = true;
           break;
         }
         saveError = error;
+        // Constraint violada ou permissão negada não melhoram repetindo.
+        if (!isRetriable(error)) break;
       } catch (e) {
         saveError = e;
       }
-      await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+      }
     }
 
     if (!saved) {
       console.error("Falha ao salvar resposta inicial", saveError);
-      toast.error("Não foi possível enviar os dados. Verifique sua conexão e tente novamente.");
+      toast.error("Não foi possível enviar os dados. Tente novamente.", {
+        description: describeError(saveError),
+        duration: 10000,
+      });
       setSubmitting(false);
       return;
     }
