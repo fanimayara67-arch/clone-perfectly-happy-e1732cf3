@@ -76,14 +76,9 @@ Deno.serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const SHEET_ID = Deno.env.get("GOOGLE_FORM_RESPONSES_SHEET_ID");
-    const SA_JSON = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON");
 
     if (!SHEET_ID) {
       throw new Error("SHEET_ID não configurado");
-    }
-
-    if (!SA_JSON) {
-      throw new Error("SERVICE ACCOUNT não configurada");
     }
 
     const authHeader = req.headers.get("Authorization") ?? "";
@@ -117,17 +112,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const accessToken = await getGoogleAccessToken(SA_JSON);
-
-    const sheetRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/A1:ZZ10000`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!sheetRes.ok) {
-      throw new Error(`Erro Sheets: ${sheetRes.status}`);
-    }
-
-    const sheetJson = await sheetRes.json();
+    const sheetJson = await gatewayFetch(`/spreadsheets/${SHEET_ID}/values/A1:ZZ10000`);
     const rows: string[][] = sheetJson.values ?? [];
 
     if (rows.length < 2) {
