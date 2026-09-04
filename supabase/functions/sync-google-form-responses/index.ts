@@ -6,64 +6,32 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// ====== Google Service Account auth → access token ======
-async function getGoogleAccessToken(serviceAccountJson: string): Promise<string> {
-  let sa;
-  try {
-    sa = JSON.parse(serviceAccountJson);
-  } catch {
-    throw new Error("JSON da service account inválido");
+const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_sheets/v4";
+
+async function gatewayFetch(path: string, init?: RequestInit) {
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+  const connectorKey = Deno.env.get("GOOGLE_SHEETS_API_KEY");
+
+  if (!lovableKey || !connectorKey) {
+    throw new Error("Credenciais do gateway não configuradas");
   }
 
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: "RS256", typ: "JWT" };
-  const claim = {
-    iss: sa.client_email,
-    scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
-    aud: "https://oauth2.googleapis.com/token",
-    exp: now + 3600,
-    iat: now,
-  };
-
-  const enc = (obj: unknown) => btoa(JSON.stringify(obj)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-
-  const unsigned = `${enc(header)}.${enc(claim)}`;
-
-  const pem = (sa.private_key as string)
-    .replace(/-----BEGIN PRIVATE KEY-----/, "")
-    .replace(/-----END PRIVATE KEY-----/, "")
-    .replace(/\s+/g, "");
-
-  const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
-
-  const cryptoKey = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
-
-  const sigBuf = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, new TextEncoder().encode(unsigned));
-
-  const sig = btoa(String.fromCharCode(...new Uint8Array(sigBuf)))
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-
-  const jwt = `${unsigned}.${sig}`;
-
-  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }),
+  const res = await fetch(`${GATEWAY_URL}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${lovableKey}`,
+      "X-Connection-Api-Key": connectorKey,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
   });
 
-  if (!tokenRes.ok) {
-    throw new Error(`Google token error: ${tokenRes.status} ${await tokenRes.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Gateway error ${res.status}: ${body}`);
   }
 
-  const json = await tokenRes.json();
-  return json.access_token as string;
+  return res.json();
 }
 
 // ====== DETECÇÃO ROBUSTA DA COLUNA ======
