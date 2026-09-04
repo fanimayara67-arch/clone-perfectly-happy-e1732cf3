@@ -176,6 +176,13 @@ export type Database = {
         Args: { _tracking_code: string }
         Returns: boolean
       }
+      debug_current_role: {
+        Args: never
+        Returns: {
+          jwt_role: string
+          role_name: string
+        }[]
+      }
       mark_google_form_completed: {
         Args: { _tracking_code: string }
         Returns: boolean
