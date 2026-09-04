@@ -23,7 +23,8 @@ export const personalDataSchema = z.object({
     .string()
     .trim()
     .email("E-mail inválido")
-    .max(255, "E-mail muito longo"),
+    // 254 e o teto do chk_email_len no banco; 255 passava aqui e estourava no INSERT.
+    .max(254, "E-mail muito longo"),
 });
 
 export type PersonalData = z.infer<typeof personalDataSchema>;
