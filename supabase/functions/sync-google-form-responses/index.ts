@@ -6,64 +6,32 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// ====== Google Service Account auth → access token ======
-async function getGoogleAccessToken(serviceAccountJson: string): Promise<string> {
-  let sa;
-  try {
-    sa = JSON.parse(serviceAccountJson);
-  } catch {
-    throw new Error("JSON da service account inválido");
+const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_sheets/v4";
+
+async function gatewayFetch(path: string, init?: RequestInit) {
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+  const connectorKey = Deno.env.get("GOOGLE_SHEETS_API_KEY");
+
+  if (!lovableKey || !connectorKey) {
+    throw new Error("Credenciais do gateway não configuradas");
   }
 
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: "RS256", typ: "JWT" };
-  const claim = {
-    iss: sa.client_email,
-    scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
-    aud: "https://oauth2.googleapis.com/token",
-    exp: now + 3600,
-    iat: now,
-  };
-
-  const enc = (obj: unknown) => btoa(JSON.stringify(obj)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-
-  const unsigned = `${enc(header)}.${enc(claim)}`;
-
-  const pem = (sa.private_key as string)
-    .replace(/-----BEGIN PRIVATE KEY-----/, "")
-    .replace(/-----END PRIVATE KEY-----/, "")
-    .replace(/\s+/g, "");
-
-  const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
-
-  const cryptoKey = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
-
-  const sigBuf = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, new TextEncoder().encode(unsigned));
-
-  const sig = btoa(String.fromCharCode(...new Uint8Array(sigBuf)))
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-
-  const jwt = `${unsigned}.${sig}`;
-
-  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
-    }),
+  const res = await fetch(`${GATEWAY_URL}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${lovableKey}`,
+      "X-Connection-Api-Key": connectorKey,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
   });
 
-  if (!tokenRes.ok) {
-    throw new Error(`Google token error: ${tokenRes.status} ${await tokenRes.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Gateway error ${res.status}: ${body}`);
   }
 
-  const json = await tokenRes.json();
-  return json.access_token as string;
+  return res.json();
 }
 
 // ====== DETECÇÃO ROBUSTA DA COLUNA ======
@@ -108,14 +76,9 @@ Deno.serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const SHEET_ID = Deno.env.get("GOOGLE_FORM_RESPONSES_SHEET_ID");
-    const SA_JSON = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON");
 
     if (!SHEET_ID) {
       throw new Error("SHEET_ID não configurado");
-    }
-
-    if (!SA_JSON) {
-      throw new Error("SERVICE ACCOUNT não configurada");
     }
 
     const authHeader = req.headers.get("Authorization") ?? "";
@@ -149,17 +112,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const accessToken = await getGoogleAccessToken(SA_JSON);
-
-    const sheetRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/A1:ZZ10000`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!sheetRes.ok) {
-      throw new Error(`Erro Sheets: ${sheetRes.status}`);
-    }
-
-    const sheetJson = await sheetRes.json();
+    const sheetJson = await gatewayFetch(`/spreadsheets/${SHEET_ID}/values/A1:ZZ10000`);
     const rows: string[][] = sheetJson.values ?? [];
 
     if (rows.length < 2) {
