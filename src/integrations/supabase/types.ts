@@ -176,25 +176,24 @@ export type Database = {
         Args: { _tracking_code: string }
         Returns: boolean
       }
-      debug_current_role: {
-        Args: never
-        Returns: {
-          jwt_role: string
-          role_name: string
-        }[]
-      }
-      debug_session_role: {
-        Args: never
-        Returns: {
-          jwt_role: string
-          role_name: string
-        }[]
-      }
       mark_google_form_completed: {
         Args: { _tracking_code: string }
         Returns: boolean
       }
       register_tracking_code: { Args: { _code: string }; Returns: boolean }
+      submit_survey_response: {
+        Args: {
+          _age: number
+          _city: string
+          _consent_given?: boolean
+          _email: string
+          _gender: string
+          _screening_answers: Json
+          _state: string
+          _tracking_code: string
+        }
+        Returns: boolean
+      }
       validate_and_consume_token: {
         Args: { _code: string; _response_id?: string }
         Returns: boolean

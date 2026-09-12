@@ -47,11 +47,6 @@ interface SaveError {
 const asSaveError = (e: unknown): SaveError =>
   typeof e === "object" && e !== null ? (e as SaveError) : {};
 
-const isDuplicateOfThisResponse = (e: unknown) => {
-  const { code, message } = asSaveError(e);
-  return code === "23505" && (message ?? "").includes("tracking_code");
-};
-
 // Só falha de rede (sem code) ou erro de servidor justificam nova tentativa.
 const isRetriable = (e: unknown) => {
   const { code } = asSaveError(e);
@@ -110,15 +105,14 @@ const Index = () => {
     const trackingCode = state.trackingCode || generateTrackingCode();
     setState((s) => ({ ...s, trackingCode }));
 
-    const payload = {
-      full_name: state.consent?.participantName || "Não informado",
-      age: personalCheck.data.age,
-      city: personalCheck.data.city,
-      state: personalCheck.data.state,
-      gender: personalCheck.data.gender,
-      email: personalCheck.data.email || null,
-      tracking_code: trackingCode,
-      screening_answers: {
+    const submission = {
+      _age: personalCheck.data.age,
+      _city: personalCheck.data.city,
+      _state: personalCheck.data.state,
+      _gender: personalCheck.data.gender,
+      _email: personalCheck.data.email || null,
+      _tracking_code: trackingCode,
+      _screening_answers: {
         electronic_consent: {
           participant_name: state.consent?.participantName || null,
           identity_document: state.consent?.identityDocument || null,
@@ -128,20 +122,15 @@ const Index = () => {
         },
         eligibility: state.eligibility || {},
       },
-      main_answers: {},
-
-      consent_given: true,
+      _consent_given: true,
     };
 
     let saved = false;
     let saveError: unknown = null;
     for (let attempt = 0; attempt < 3 && !saved; attempt++) {
       try {
-        const { error } = await supabase.from("survey_responses").insert(payload);
-        // O tracking_code é único e gerado uma única vez, então serve de chave de
-        // idempotência: 23505 nele significa que uma tentativa anterior já gravou
-        // esta resposta e só a confirmação se perdeu no caminho.
-        if (!error || isDuplicateOfThisResponse(error)) {
+        const { data, error } = await supabase.rpc("submit_survey_response", submission);
+        if (!error && data === true) {
           saved = true;
           break;
         }
