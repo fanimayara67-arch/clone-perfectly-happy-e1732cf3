@@ -105,41 +105,50 @@ const Index = () => {
     const trackingCode = state.trackingCode || generateTrackingCode();
     setState((s) => ({ ...s, trackingCode }));
 
-    const submission = {
-      _age: personalCheck.data.age,
-      _city: personalCheck.data.city,
-      _state: personalCheck.data.state,
-      _gender: personalCheck.data.gender,
-      _email: personalCheck.data.email || null,
-      _tracking_code: trackingCode,
-      _screening_answers: {
-        electronic_consent: {
-          participant_name: state.consent?.participantName || null,
-          identity_document: state.consent?.identityDocument || null,
-          consent_city: state.consent?.consentCity || null,
-          consent_date: state.consent?.consentDate || null,
-          accepted_tcle: true,
-        },
-        eligibility: state.eligibility || {},
+    // Construir objeto de respostas de screening
+    const screeningAnswers = {
+      electronic_consent: {
+        participant_name: state.consent?.participantName || null,
+        identity_document: state.consent?.identityDocument || null,
+        consent_city: state.consent?.consentCity || null,
+        consent_date: state.consent?.consentDate || null,
+        accepted_tcle: true,
       },
-      _consent_given: true,
+      eligibility: state.eligibility || {},
     };
 
     let saved = false;
     let saveError: unknown = null;
+    
     for (let attempt = 0; attempt < 3 && !saved; attempt++) {
       try {
-        const { data, error } = await supabase.rpc("submit_survey_response", submission);
+        // Chamar RPC com parâmetros nomeados (named parameters)
+        const { data, error } = await supabase.rpc(
+          "submit_survey_response",
+          {
+            _age: personalCheck.data.age,
+            _city: personalCheck.data.city,
+            _state: personalCheck.data.state,
+            _gender: personalCheck.data.gender,
+            _email: personalCheck.data.email || null,
+            _screening_answers: screeningAnswers,
+            _tracking_code: trackingCode,
+            _consent_given: true,
+          }
+        );
+
         if (!error && data === true) {
           saved = true;
           break;
         }
+        
         saveError = error;
         // Constraint violada ou permissão negada não melhoram repetindo.
         if (!isRetriable(error)) break;
       } catch (e) {
         saveError = e;
       }
+      
       if (attempt < 2) {
         await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
       }
