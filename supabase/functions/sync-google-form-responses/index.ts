@@ -1,10 +1,6 @@
 // Edge function: sync-google-form-responses
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_sheets/v4";
 
@@ -73,17 +69,18 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     const SHEET_ID = Deno.env.get("GOOGLE_FORM_RESPONSES_SHEET_ID");
 
-    if (!SHEET_ID) {
-      throw new Error("SHEET_ID não configurado");
+    if (!SUPABASE_URL || !SERVICE_ROLE || !ANON_KEY || !SHEET_ID) {
+      throw new Error("Configuração incompleta da sincronização");
     }
 
     const authHeader = req.headers.get("Authorization") ?? "";
 
-    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    const userClient = createClient(SUPABASE_URL, ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
 
@@ -123,8 +120,6 @@ Deno.serve(async (req) => {
 
     const header = rows[0];
 
-    console.log("HEADER:", header);
-
     const codeCol = findCodeColumn(header);
     const tsCol = findTimestampColumn(header);
 
@@ -135,27 +130,58 @@ Deno.serve(async (req) => {
 
     let valid = 0;
     let invalid = 0;
+    let processed = 0;
 
     for (const row of rows.slice(1)) {
       const rawCode = (row[codeCol] ?? "").toString().trim();
       const normalized = rawCode.toUpperCase();
+      if (!normalized) continue;
+      processed++;
 
       const payload: Record<string, string> = {};
       header.forEach((h, i) => (payload[h] = row[i] ?? ""));
 
-      const { data: ok } = await admin.rpc("confirm_response_with_token", {
+      const { data: ok, error: confirmError } = await admin.rpc("confirm_response_with_token", {
         _tracking_code: normalized,
       });
 
+      if (confirmError) throw confirmError;
+
       if (ok) {
-        await admin.from("survey_responses").update({ main_answers: payload }).eq("tracking_code", normalized);
+        const completedAt = tsCol >= 0 && row[tsCol] ? new Date(row[tsCol]).toISOString() : new Date().toISOString();
+        const { error: updateError } = await admin
+          .from("survey_responses")
+          .update({
+            main_answers: payload,
+            google_form_completed: true,
+            google_form_completed_at: completedAt,
+          })
+          .eq("tracking_code", normalized);
+        if (updateError) throw updateError;
         valid++;
       } else {
+        const { data: existing } = await admin
+          .from("invalid_form_responses")
+          .select("id")
+          .eq("attempted_code", normalized)
+          .limit(1)
+          .maybeSingle();
+        if (!existing) {
+          const { error: invalidError } = await admin.from("invalid_form_responses").insert({
+            attempted_code: normalized,
+            form_submitted_at: tsCol >= 0 && row[tsCol] ? new Date(row[tsCol]).toISOString() : null,
+            payload,
+            reason: "Código inexistente ou não vinculado a um cadastro",
+          });
+          if (invalidError) throw invalidError;
+        }
         invalid++;
       }
     }
 
-    return new Response(JSON.stringify({ ok: true, valid, invalid }), { headers: corsHeaders });
+    return new Response(JSON.stringify({ ok: true, processed, valid, invalid }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
     console.error("ERRO GERAL:", e);
     return new Response(JSON.stringify({ error: String(e) }), {
