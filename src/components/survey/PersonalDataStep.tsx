@@ -22,9 +22,15 @@ export const personalDataSchema = z.object({
   email: z
     .string()
     .trim()
-    .email("E-mail inválido")
-    // 254 e o teto do chk_email_len no banco; 255 passava aqui e estourava no INSERT.
-    .max(254, "E-mail muito longo"),
+    .optional()
+    .refine(
+      (val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val),
+      "E-mail inválido"
+    )
+    .refine(
+      (val) => !val || val.length <= 254,
+      "E-mail muito longo"
+    ),
 });
 
 export type PersonalData = z.infer<typeof personalDataSchema>;
@@ -145,7 +151,7 @@ export const PersonalDataStep = ({
       </Card>
 
       <Card>
-        <Field label="E-mail para receber informações e resultados" error={errors.email}>
+        <Field label="E-mail para receber informações e resultados (opcional)" error={errors.email}>
           <Input
             type="email"
             value={data.email || ""}
