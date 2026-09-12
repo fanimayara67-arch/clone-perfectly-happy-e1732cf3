@@ -1,4 +1,4 @@
--- Recriar função submit_survey_response com segurança definida corretamente
+-- Recriar função submit_survey_response com validação rigorosa
 DROP FUNCTION IF EXISTS public.submit_survey_response(integer, text, text, text, text, jsonb, text, boolean);
 
 CREATE OR REPLACE FUNCTION public.submit_survey_response(
@@ -25,42 +25,42 @@ DECLARE
 BEGIN
   -- Validar idade
   IF _age IS NULL OR _age < 18 OR _age > 110 THEN
-    RAISE EXCEPTION 'invalid age' USING ERRCODE = '22023';
+    RAISE EXCEPTION 'Invalid age. Must be between 18 and 110, got: %', _age USING ERRCODE = '22023';
   END IF;
 
   -- Validar cidade
   IF char_length(v_city) < 2 OR char_length(v_city) > 80 THEN
-    RAISE EXCEPTION 'invalid city' USING ERRCODE = '22023';
+    RAISE EXCEPTION 'Invalid city. Length must be between 2 and 80, got: %', char_length(v_city) USING ERRCODE = '22023';
   END IF;
 
   -- Validar estado (UF - 2 letras maiúsculas)
   IF v_state !~ '^[A-Z]{2}$' THEN
-    RAISE EXCEPTION 'invalid state' USING ERRCODE = '22023';
+    RAISE EXCEPTION 'Invalid state. Must be 2 uppercase letters, got: %', v_state USING ERRCODE = '22023';
   END IF;
 
-  -- Validar gênero
-  IF char_length(v_gender) < 1 OR char_length(v_gender) > 40 THEN
-    RAISE EXCEPTION 'invalid gender' USING ERRCODE = '22023';
+  -- Validar gênero RIGOROSAMENTE (APENAS Feminino ou Masculino)
+  IF v_gender NOT IN ('Feminino', 'Masculino') THEN
+    RAISE EXCEPTION 'Invalid gender. Must be "Feminino" or "Masculino", got: %', v_gender USING ERRCODE = '22023';
   END IF;
 
   -- Validar email (se fornecido)
   IF v_email IS NOT NULL AND (char_length(v_email) > 254 OR v_email !~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$') THEN
-    RAISE EXCEPTION 'invalid email' USING ERRCODE = '22023';
+    RAISE EXCEPTION 'Invalid email format or length exceeded, got: %', v_email USING ERRCODE = '22023';
   END IF;
 
   -- Validar consentimento
   IF _consent_given IS DISTINCT FROM true THEN
-    RAISE EXCEPTION 'consent required' USING ERRCODE = '22023';
+    RAISE EXCEPTION 'Consent is required' USING ERRCODE = '22023';
   END IF;
 
   -- Validar código de rastreamento
   IF v_code !~ '^UFTC-[A-Z0-9]{4,16}$' THEN
-    RAISE EXCEPTION 'invalid tracking code' USING ERRCODE = '22023';
+    RAISE EXCEPTION 'Invalid tracking code format, got: %', v_code USING ERRCODE = '22023';
   END IF;
 
   -- Validar respostas de screening (JSONB object válido)
   IF _screening_answers IS NULL OR jsonb_typeof(_screening_answers) <> 'object' OR pg_column_size(_screening_answers) >= 50000 THEN
-    RAISE EXCEPTION 'invalid screening answers' USING ERRCODE = '22023';
+    RAISE EXCEPTION 'Invalid screening answers. Must be non-null JSON object under 50KB' USING ERRCODE = '22023';
   END IF;
 
   -- Inserir resposta da pesquisa
@@ -81,6 +81,9 @@ EXCEPTION
       RETURN true;
     END IF;
     RAISE;
+  WHEN OTHERS THEN
+    -- Log detalhado de qualquer erro
+    RAISE EXCEPTION 'Database error: %', SQLERRM USING ERRCODE = SQLSTATE;
 END;
 $$;
 
