@@ -1,13 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { z } from "zod";
 
 export const personalDataSchema = z.object({
@@ -18,7 +11,6 @@ export const personalDataSchema = z.object({
     .max(110, "Idade inválida"),
   city: z.string().trim().min(2, "Informe a cidade").max(80),
   state: z.string().trim().length(2, "UF deve conter 2 letras"),
-  gender: z.string().min(1, "Selecione o gênero"),
   email: z
     .string()
     .trim()
@@ -40,15 +32,6 @@ interface PersonalDataStepProps {
   onChange: (data: Partial<PersonalData>) => void;
   onValidityChange: (valid: boolean) => void;
 }
-
-const GENDERS = [
-  "Feminino",
-  "Masculino",
-  "Não-binário",
-  "Transgênero",
-  "Prefiro não informar",
-  "Outro",
-];
 
 export const PersonalDataStep = ({
   data,
@@ -88,7 +71,7 @@ export const PersonalDataStep = ({
       />
 
       <Card>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <Field label="Idade" error={errors.age}>
             <Input
               type="number"
@@ -102,23 +85,6 @@ export const PersonalDataStep = ({
               max={110}
               className="h-12"
             />
-          </Field>
-          <Field label="Gênero" error={errors.gender}>
-            <Select
-              value={data.gender || ""}
-              onValueChange={(v) => update({ gender: v })}
-            >
-              <SelectTrigger className="h-12">
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                {GENDERS.map((g) => (
-                  <SelectItem key={g} value={g}>
-                    {g}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </Field>
         </div>
       </Card>
