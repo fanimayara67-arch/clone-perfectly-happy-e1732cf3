@@ -5,6 +5,8 @@ import { exactColumn, submittedAt, rowPayload, evidenceKey } from './validation.
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 });
+const MAX_ROWS_PER_RUN = 300;
+const TIME_BUDGET_MS = 20000;
 const required = (name: string) => {
   const value = Deno.env.get(name);
   if (!value) throw new Error(`Configuração ausente: ${name}`);
@@ -38,6 +40,12 @@ Deno.serve(async req => {
     if (roleError) throw new Error('Falha ao verificar permissão administrativa');
     if (!role) return json({ error: 'Sem permissão' }, 403);
 
+    let startRow = 1;
+    try {
+      const body = await req.json();
+      if (Number.isInteger(body?.startRow) && body.startRow > 0) startRow = body.startRow;
+    } catch { /* body opcional */ }
+
     const sheet = required('GOOGLE_FORM_RESPONSES_SHEET_ID');
     const tab = required('GOOGLE_FORM_RESPONSES_TAB');
     const offset = required('GOOGLE_FORM_TIMEZONE_OFFSET');
@@ -53,9 +61,17 @@ Deno.serve(async req => {
     rowPayload(header, []); // Validate headers before any mutation.
     let valid = 0, invalid = 0, failed = 0, processed = 0;
     const issues: { row: number; reason: string }[] = [];
-    for (let i = 1; i < rows.length; i++) {
+    const startedAt = Date.now();
+    let nextRow: number | null = null;
+    let batchCount = 0;
+    for (let i = startRow; i < rows.length; i++) {
+      if (batchCount >= MAX_ROWS_PER_RUN || Date.now() - startedAt > TIME_BUDGET_MS) {
+        nextRow = i + 1;
+        break;
+      }
       const row = rows[i].map(String);
       if (row.every(v => !v.trim())) continue;
+      batchCount++;
       processed++;
       let reason = '';
       try {
@@ -87,7 +103,7 @@ Deno.serve(async req => {
       }
       if (reason) issues.push({ row: i + 1, reason });
     }
-    return json({ ok: failed === 0, processed, valid, invalid, failed, issues });
+    return json({ ok: failed === 0, processed, valid, invalid, failed, issues, nextRow, totalRows: rows.length - 1 });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Falha na sincronização' }, 500);
   }

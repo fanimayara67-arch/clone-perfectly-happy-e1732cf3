@@ -148,6 +148,8 @@ const Admin = () => {
   const [helpOpen, setHelpOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [syncIssues, setSyncIssues] = useState<{ row: number; reason: string }[]>([]);
   const audit = useMemo(() => auditResponses(responses), [responses]);
   const [editing, setEditing] = useState<Response | null>(null);
@@ -188,24 +190,44 @@ const Admin = () => {
     return { data: all, error: null };
   };
 
+  type SyncBatch = {
+    processed?: number; valid?: number; invalid?: number; failed?: number;
+    issues?: { row: number; reason: string }[]; error?: string;
+    nextRow?: number | null; totalRows?: number;
+  };
+
   const syncGoogleForms = async () => {
     setSyncing(true);
     try {
-      const { data, error } = await supabase.functions.invoke(
-        "sync-google-form-responses",
-        { body: {} },
-      );
-      if (error) throw error;
-      const d = data as { processed?: number; valid?: number; invalid?: number; failed?: number; issues?: { row: number; reason: string }[]; error?: string };
-      if (d?.error) throw new Error(d.error);
-      setSyncIssues(d.issues ?? []);
-      if (d.failed) toast.error(`${d.failed} linha(s) falharam; consulte as pendências`);
+      let startRow = 1;
+      const totals = { processed: 0, valid: 0, invalid: 0, failed: 0 };
+      const allIssues: { row: number; reason: string }[] = [];
+      for (;;) {
+        const { data, error } = await supabase.functions.invoke(
+          "sync-google-form-responses",
+          { body: { startRow } },
+        );
+        if (error) throw error;
+        const d = data as SyncBatch;
+        if (d?.error) throw new Error(d.error);
+        totals.processed += d.processed ?? 0;
+        totals.valid += d.valid ?? 0;
+        totals.invalid += d.invalid ?? 0;
+        totals.failed += d.failed ?? 0;
+        allIssues.push(...(d.issues ?? []));
+        if (!d.nextRow) break;
+        startRow = d.nextRow;
+        toast.info(`Sincronizando… ${totals.processed}/${d.totalRows ?? "?"} linhas processadas até agora`);
+      }
+      setSyncIssues(allIssues);
+      if (totals.failed) toast.error(`${totals.failed} linha(s) falharam; consulte as pendências`);
       toast.info(
-        `Sincronizado: ${d.valid ?? 0} envios verificados, ${d.invalid ?? 0} inválidas (${d.processed ?? 0} processadas)`,
+        `Sincronizado: ${totals.valid} envios verificados, ${totals.invalid} inválidas (${totals.processed} processadas)`,
       );
       const { data: fresh, error: refreshError } = await fetchAll();
       if (refreshError) throw refreshError;
       setResponses(fresh);
+      setLastSyncedAt(new Date());
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(`Erro ao sincronizar: ${msg}`);
@@ -216,6 +238,11 @@ const Admin = () => {
 
   useEffect(() => {
     if (!user || !isAdmin) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const BASE_INTERVAL_MS = 10000;
+    const MAX_INTERVAL_MS = 120000;
+    let backoffMs = BASE_INTERVAL_MS;
 
     const load = async () => {
       const { data, error } = await fetchAll();
@@ -224,18 +251,23 @@ const Admin = () => {
         console.error(error);
       } else {
         setResponses(data);
+        setLastUpdatedAt(new Date());
       }
       setFetching(false);
     };
     load();
 
-    // Poll every 10s for new/updated responses (realtime disabled for security)
-    const interval = setInterval(async () => {
+    const poll = async () => {
       const { data: fresh, error } = await fetchAll();
+      if (!active) return;
       if (error) {
         console.error(error);
+        backoffMs = Math.min(backoffMs * 2, MAX_INTERVAL_MS);
+        timer = setTimeout(poll, backoffMs);
         return;
       }
+      backoffMs = BASE_INTERVAL_MS;
+      setLastUpdatedAt(new Date());
       setResponses((prev) => {
         const prevIds = new Set(prev.map((r) => r.id));
         const newOnes = fresh.filter((r) => !prevIds.has(r.id));
@@ -257,10 +289,13 @@ const Admin = () => {
         }
         return fresh;
       });
-    }, 10000);
+      timer = setTimeout(poll, backoffMs);
+    };
+    timer = setTimeout(poll, BASE_INTERVAL_MS);
 
     return () => {
-      clearInterval(interval);
+      active = false;
+      clearTimeout(timer);
     };
   }, [user, isAdmin]);
 
@@ -467,8 +502,12 @@ const Admin = () => {
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-              Atualiza a cada 10s
+              <span className={cn("h-2 w-2 rounded-full animate-pulse", loadError ? "bg-destructive" : "bg-success")} />
+              {loadError
+                ? "Falha ao atualizar"
+                : lastUpdatedAt
+                  ? `Atualizado às ${lastUpdatedAt.toLocaleTimeString("pt-BR")}`
+                  : "Carregando…"}
             </div>
             <Button variant="default" size="sm" onClick={syncGoogleForms} disabled={syncing}>
               {syncing ? (
@@ -491,11 +530,16 @@ const Admin = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-5 space-y-5">
-        {loadError && <p role="alert" className="text-destructive">Falha ao atualizar dados. Contagens indisponíveis ou desatualizadas; não use para fechar a pesquisa.</p>}
+        {loadError && (
+          <p role="alert" className="text-destructive">
+            Falha ao atualizar dados{lastUpdatedAt ? ` — última atualização bem-sucedida às ${lastUpdatedAt.toLocaleTimeString("pt-BR")}` : ""}. Contagens indisponíveis ou desatualizadas; não use para fechar a pesquisa.
+          </p>
+        )}
         <div className="bg-card rounded-2xl p-4 border border-border/60 space-y-2">
           <p className="font-semibold">{fetching || loadError ? "Contagem não disponível" : `${audit.valid} respostas válidas para a meta de 50 · faltam ${audit.missing}`}</p>
           <p className="text-xs text-muted-foreground">{audit.tests} testes · {audit.possibleDuplicates.size} cadastros com possível duplicidade · {audit.review} sem classificação · {audit.identifiableWithoutConflict} cadastros com e-mail/documento sem conflito identificado.</p>
           <p className="text-xs text-muted-foreground">A meta exige envio verificado, classificação real e ausência de conflito de identidade. Marcadores antigos foram preservados. Abrir o formulário ou ter token não comprova envio. Use Validar Google Forms para buscar os envios.</p>
+          {lastSyncedAt && <p className="text-xs text-muted-foreground">Última sincronização com o Google Forms: {lastSyncedAt.toLocaleString("pt-BR")}.</p>}
           {syncIssues.length > 0 && <details><summary>Pendências da última sincronização ({syncIssues.length})</summary>{syncIssues.map(i => <p key={i.row} className="text-xs">Linha {i.row}: {i.reason}</p>)}</details>}
         </div>
         {/* Stats */}
