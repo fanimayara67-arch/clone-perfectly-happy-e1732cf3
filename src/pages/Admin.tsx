@@ -132,7 +132,9 @@ const Admin = () => {
   const [invalids, setInvalids] = useState<InvalidResponse[]>([]);
   const [fetching, setFetching] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "pending" | "answers">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "completed" | "pending" | "answers" | "real" | "test" | "duplicate" | "excluded" | "unreviewed"
+  >("all");
   const [selected, setSelected] = useState<Response | null>(null);
   const [showForms, setShowForms] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -268,6 +270,8 @@ const Admin = () => {
       if (statusFilter === "completed" && !hasVerifiedSubmission(r)) return false;
       if (statusFilter === "pending" && hasVerifiedSubmission(r)) return false;
       if (statusFilter === "answers" && !hasFormAnswers(r)) return false;
+      if (["real", "test", "duplicate", "excluded"].includes(statusFilter) && r.research_classification !== statusFilter) return false;
+      if (statusFilter === "unreviewed" && r.research_classification && r.research_classification !== "unreviewed") return false;
       if (!q) return true;
       return (
         displayName(r).toLowerCase().includes(q) ||
@@ -540,6 +544,11 @@ const Admin = () => {
               <SelectItem value="completed">Concluídos</SelectItem>
               <SelectItem value="pending">Pendentes</SelectItem>
               <SelectItem value="answers">Com respostas do Forms</SelectItem>
+              <SelectItem value="real">Classificado: Real</SelectItem>
+              <SelectItem value="test">Classificado: Teste</SelectItem>
+              <SelectItem value="duplicate">Classificado: Duplicado</SelectItem>
+              <SelectItem value="excluded">Classificado: Excluído</SelectItem>
+              <SelectItem value="unreviewed">Classificado: A revisar</SelectItem>
             </SelectContent>
           </Select>
           <Button onClick={exportCsv} variant="outline">
@@ -634,6 +643,7 @@ const Admin = () => {
                               {r.google_form_completed ? "Conclusão legada · revisar" : "Pendente"}
                             </Badge>
                           )}
+                          <ClassificationBadge value={r.research_classification} />
                           <span className="text-xs text-muted-foreground max-w-64">{audit.reason(r)}</span>
                           {r.token_validated ? (
                             <Badge className="bg-primary/15 text-primary hover:bg-primary/15 gap-1">
@@ -995,6 +1005,33 @@ const Admin = () => {
         </DialogContent>
       </Dialog>
     </div>
+  );
+};
+
+const CLASSIFICATION_LABEL: Record<string, string> = {
+  real: "Real",
+  test: "Teste",
+  duplicate: "Duplicado",
+  excluded: "Excluído",
+  unreviewed: "A revisar",
+};
+
+const ClassificationBadge = ({ value }: { value?: string | null }) => {
+  const v = value || "unreviewed";
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "text-[10px] font-semibold",
+        v === "real" && "border-success/50 text-success",
+        v === "test" && "border-muted-foreground/40 text-muted-foreground",
+        v === "duplicate" && "border-orange-500/50 text-orange-600 dark:text-orange-400",
+        v === "excluded" && "border-destructive/50 text-destructive",
+        v === "unreviewed" && "border-primary/40 text-primary",
+      )}
+    >
+      {CLASSIFICATION_LABEL[v] ?? v}
+    </Badge>
   );
 };
 
