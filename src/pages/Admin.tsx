@@ -118,6 +118,11 @@ const consentInfo = (r: Response) =>
     };
   })?.electronic_consent || null;
 
+const csvSafe = (v: unknown): string => {
+  const s = String(v ?? "");
+  return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+};
+
 const displayName = (r: Response) =>
   consentInfo(r)?.participant_name ||
   (r.full_name && r.full_name !== "Não informado" ? r.full_name : null) ||
@@ -127,7 +132,7 @@ const displayName = (r: Response) =>
 
 
 const Admin = () => {
-  const { user, isAdmin, loading } = useAuth();
+  const { user, isAdmin, loading, adminCheckError } = useAuth();
   const [responses, setResponses] = useState<Response[]>([]);
   const [invalids, setInvalids] = useState<InvalidResponse[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -302,6 +307,16 @@ const Admin = () => {
   }
 
   if (!user) return <Navigate to="/admin/login" replace />;
+  if (adminCheckError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 text-center px-4">
+        <ShieldAlert className="h-8 w-8 text-destructive" />
+        <p className="text-sm font-semibold">Falha de conexão ao verificar permissão administrativa.</p>
+        <p className="text-xs text-muted-foreground max-w-sm">Isso não significa que você não tem acesso — a verificação falhou por instabilidade. Recarregue para tentar de novo.</p>
+        <Button size="sm" onClick={() => window.location.reload()}>Tentar novamente</Button>
+      </div>
+    );
+  }
   if (!isAdmin) return <Navigate to="/admin/login" replace />;
 
   const copyCode = (code: string | null) => {
@@ -316,19 +331,19 @@ const Admin = () => {
       motivo: audit.reason(r),
       evidencia_origem: r.verified_source_key ?? "",
       codigo: r.tracking_code || "",
-      nome: displayName(r),
-      documento: consentInfo(r)?.identity_document || "",
+      nome: csvSafe(displayName(r)),
+      documento: csvSafe(consentInfo(r)?.identity_document || ""),
       idade: r.age,
-      genero: r.gender,
-      email: r.email || "",
-      cidade: r.city,
+      genero: csvSafe(r.gender),
+      email: csvSafe(r.email || ""),
+      cidade: csvSafe(r.city),
       uf: r.state,
-      criterios: eligibilityEntries(r)
+      criterios: csvSafe(eligibilityEntries(r)
         .map(([q, a]) => `${q}: ${a}`)
-        .join(" | "),
-      respostas_forms: formAnswerEntries(r)
+        .join(" | ")),
+      respostas_forms: csvSafe(formAnswerEntries(r)
         .map(([q, a]) => `${q.trim()}: ${String(a)}`)
-        .join(" | "),
+        .join(" | ")),
       token_validado: r.token_validated ? "sim" : "nao",
       google_forms_concluido: r.google_form_completed ? "sim" : "nao",
       data_cadastro: new Date(r.created_at).toLocaleString("pt-BR"),
