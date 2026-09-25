@@ -13,6 +13,8 @@ type EntryMap = Record<string, string>;
 export const GOOGLE_FORM_ID = "1FAIpQLSfkK5RUJIZ6a95AGx7zHDJAKWo9a1_SSEVO9umV8l5idc5VHw";
 export const GOOGLE_FORM_URL = `https://docs.google.com/forms/d/e/${GOOGLE_FORM_ID}/viewform`;
 export const GOOGLE_FORM_EMBED_URL = `${GOOGLE_FORM_URL}?embedded=true`;
+// Campo de identificação do formulário externo: preenchido pelo site, sem digitação.
+const TRACKING_ENTRY_ID = "1804684228";
 
 const GOOGLE_FORM_ENTRIES: EntryMap = {
   age: "",
@@ -84,9 +86,13 @@ export const isGoogleFormsConfigured = () =>
   Boolean(GOOGLE_FORM_ID) &&
   Object.values(GOOGLE_FORM_ENTRIES).some((entryId) => Boolean(entryId));
 
-export const createGoogleFormUrl = (personal?: Partial<PersonalData>, embedded = true) => {
+export const createGoogleFormUrl = (personal?: Partial<PersonalData>, embedded = true, trackingCode?: string) => {
   const params = new URLSearchParams();
   if (embedded) params.set("embedded", "true");
+  if (trackingCode) {
+    params.set("usp", "pp_url");
+    appendValue(params, TRACKING_ENTRY_ID, trackingCode);
+  }
 
   if (personal) {
     appendValue(params, GOOGLE_FORM_ENTRIES.age, personal.age);

@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { Copy, ExternalLink, Loader2, KeyRound, Check } from "lucide-react";
+import { ExternalLink, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PersonalData } from "@/components/survey/PersonalDataStep";
 import { createGoogleFormUrl } from "@/lib/google-forms";
-import { toast } from "sonner";
 
 interface GoogleFormStepProps {
   personal?: Partial<PersonalData>;
@@ -13,22 +12,9 @@ interface GoogleFormStepProps {
 
 export const GoogleFormStep = ({ personal, trackingCode, onDone }: GoogleFormStepProps) => {
   const [loaded, setLoaded] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [finishing, setFinishing] = useState(false);
-  const embedUrl = createGoogleFormUrl(personal, true);
-  const openUrl = createGoogleFormUrl(personal, false);
-
-  const copyCode = async () => {
-    if (!trackingCode) return;
-    try {
-      await navigator.clipboard.writeText(trackingCode);
-      setCopied(true);
-      toast.success("Código copiado!");
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error("Não foi possível copiar. Anote o código manualmente.");
-    }
-  };
+  const embedUrl = createGoogleFormUrl(personal, true, trackingCode);
+  const openUrl = createGoogleFormUrl(personal, false, trackingCode);
 
   // A conclusão não é marcada aqui: mark_google_form_completed é revogada para anon
   // (migration 20260429211029) e toda chamada voltava 42501. Quem marca de verdade
@@ -51,40 +37,6 @@ export const GoogleFormStep = ({ personal, trackingCode, onDone }: GoogleFormSte
           Responda a pesquisa abaixo. Se o Google não carregar no seu navegador, use o botão para abrir a pesquisa.
         </p>
       </div>
-
-      {trackingCode && (
-        <div className="bg-card rounded-2xl p-5 border-2 border-primary/30 shadow-card">
-          <div className="flex items-start gap-3 mb-3">
-            <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-              <KeyRound className="h-4 w-4" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold text-foreground leading-snug">
-                Seu código de identificação
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                Cole este código no campo <strong>"Código de identificação"</strong> dentro do Google Forms antes de enviar suas respostas.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 bg-secondary rounded-xl p-3">
-            <code className="flex-1 text-base font-mono font-bold text-foreground tracking-wider text-center">
-              {trackingCode}
-            </code>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={copyCode}
-              className="h-9 rounded-lg shrink-0"
-            >
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              <span className="ml-1.5 text-xs font-semibold">
-                {copied ? "Copiado" : "Copiar"}
-              </span>
-            </Button>
-          </div>
-        </div>
-      )}
 
       <Button asChild size="lg" className="h-12 w-full rounded-xl bg-gradient-primary font-semibold">
         <a href={openUrl} target="_blank" rel="noreferrer">
