@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Stethoscope } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -61,7 +61,14 @@ const describeError = (e: unknown) => {
 };
 
 const Index = () => {
-  const [state, setState] = useState<FormState>(initial);
+  const [state, setState] = useState<FormState>(() => {
+    try {
+      const code = sessionStorage.getItem(STORAGE_KEY);
+      return code && /^UFTC-[A-Z0-9]{4,16}$/.test(code)
+        ? { ...initial, stage: "googleForm", trackingCode: code } : initial;
+    } catch { return initial; }
+  });
+  const saveInFlight = useRef(false);
   const [personalValid, setPersonalValid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -94,6 +101,7 @@ const Index = () => {
   const goTo = (stage: Stage) => setState((s) => ({ ...s, stage }));
 
   const savePersonalDataAndOpenGoogleForm = async () => {
+    if (saveInFlight.current) return;
     const personalCheck = personalDataSchema.safeParse(state.personal);
     if (!personalCheck.success) {
       toast.error("Verifique os dados pessoais");
@@ -101,6 +109,7 @@ const Index = () => {
       return;
     }
 
+    saveInFlight.current = true;
     setSubmitting(true);
     const trackingCode = state.trackingCode || generateTrackingCode();
     setState((s) => ({ ...s, trackingCode }));
@@ -142,9 +151,9 @@ const Index = () => {
           break;
         }
         
-        saveError = error;
+        saveError = error ?? { code: "SUBMISSION_REJECTED", message: "Cadastro não confirmado pelo banco" };
         // Constraint violada ou permissão negada não melhoram repetindo.
-        if (!isRetriable(error)) break;
+        if (!isRetriable(saveError)) break;
       } catch (e) {
         saveError = e;
       }
@@ -161,9 +170,12 @@ const Index = () => {
         duration: 10000,
       });
       setSubmitting(false);
+      saveInFlight.current = false;
       return;
     }
 
+    try { sessionStorage.setItem(STORAGE_KEY, trackingCode); } catch { /* Storage can be disabled. */ }
+    saveInFlight.current = false;
     toast.success("Dados enviados. Pode responder o Google Forms.");
     goTo("googleForm");
     setSubmitting(false);
@@ -172,6 +184,7 @@ const Index = () => {
 
   const restart = () => {
     localStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem(STORAGE_KEY);
     setState({ ...initial });
   };
 

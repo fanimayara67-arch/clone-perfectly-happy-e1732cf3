@@ -12,6 +12,7 @@ export const SuccessStep = (_props: SuccessStepProps) => {
           <CheckCircle2 className="h-9 w-9" />
         </div>
         <h1 className="text-2xl font-bold">Obrigado pela participação!</h1>
+        <p className="text-sm mt-3">A confirmação do envio depende da sincronização com o Google Forms. Este aviso não confirma a conclusão. Se ainda não enviou, volte ao formulário para finalizar.</p>
       </div>
     </div>
   );

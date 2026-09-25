@@ -52,6 +52,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { GOOGLE_FORM_URL } from "@/lib/google-forms";
+import { auditResponses, hasVerifiedSubmission } from "@/lib/response-audit";
 import { cn } from "@/lib/utils";
 
 interface Response {
@@ -66,6 +67,11 @@ interface Response {
   tracking_code: string | null;
   google_form_completed: boolean;
   google_form_completed_at: string | null;
+  research_classification?: string;
+  classification_note?: string | null;
+  verified_source_key?: string | null;
+  verified_at?: string | null;
+  survey_started_at?: string | null;
   token_validated?: boolean;
   token_validated_at?: string | null;
   consent_given: boolean;
@@ -134,10 +140,15 @@ const Admin = () => {
 
   const [helpOpen, setHelpOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [syncIssues, setSyncIssues] = useState<{ row: number; reason: string }[]>([]);
+  const audit = useMemo(() => auditResponses(responses), [responses]);
   const [editing, setEditing] = useState<Response | null>(null);
   const [deleting, setDeleting] = useState<Response | null>(null);
   const [saving, setSaving] = useState(false);
   const [editForm, setEditForm] = useState({
+    research_classification: "unreviewed",
+    classification_note: "",
     full_name: "",
     age: "",
     email: "",
@@ -148,16 +159,26 @@ const Admin = () => {
 
 
   const fetchAll = async () => {
-    const [{ data, error }, { data: inv }] = await Promise.all([
-      supabase.from("survey_responses").select("*").order("created_at", { ascending: false }),
-      supabase
-        .from("invalid_form_responses")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(200),
-    ]);
-    if (inv) setInvalids(inv as unknown as InvalidResponse[]);
-    return { data: (data || []) as Response[], error };
+    const all: Response[] = [];
+    let lastId: string | null = null;
+    const cutoff = new Date().toISOString();
+    for (;;) {
+      let query = supabase.from("survey_responses").select("*")
+        .lte("created_at", cutoff).order("id").limit(500);
+      if (lastId) query = query.gt("id", lastId);
+      const { data, error } = await query;
+      if (error) { setLoadError(true); return { data: all, error }; }
+      all.push(...data as Response[]);
+      if (data.length < 500) break;
+      lastId = data[data.length - 1].id;
+    }
+    const { data: inv, error } = await supabase.from("invalid_form_responses").select("*")
+      .order("created_at", { ascending: false }).limit(200);
+    if (error) { setLoadError(true); return { data: all, error }; }
+    setInvalids(inv as unknown as InvalidResponse[]);
+    setLoadError(false);
+    all.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return { data: all, error: null };
   };
 
   const syncGoogleForms = async () => {
@@ -168,12 +189,15 @@ const Admin = () => {
         { body: {} },
       );
       if (error) throw error;
-      const d = data as { processed?: number; valid?: number; invalid?: number; error?: string };
+      const d = data as { processed?: number; valid?: number; invalid?: number; failed?: number; issues?: { row: number; reason: string }[]; error?: string };
       if (d?.error) throw new Error(d.error);
-      toast.success(
-        `Sincronizado: ${d.valid ?? 0} válidas, ${d.invalid ?? 0} inválidas (${d.processed ?? 0} processadas)`,
+      setSyncIssues(d.issues ?? []);
+      if (d.failed) toast.error(`${d.failed} linha(s) falharam; consulte as pendências`);
+      toast.info(
+        `Sincronizado: ${d.valid ?? 0} envios verificados, ${d.invalid ?? 0} inválidas (${d.processed ?? 0} processadas)`,
       );
-      const { data: fresh } = await fetchAll();
+      const { data: fresh, error: refreshError } = await fetchAll();
+      if (refreshError) throw refreshError;
       setResponses(fresh);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -234,11 +258,15 @@ const Admin = () => {
   }, [user, isAdmin]);
 
 
+  useEffect(() => {
+    setSelected(current => current ? responses.find(r => r.id === current.id) ?? null : null);
+  }, [responses]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return responses.filter((r) => {
-      if (statusFilter === "completed" && !r.google_form_completed) return false;
-      if (statusFilter === "pending" && r.google_form_completed) return false;
+      if (statusFilter === "completed" && !hasVerifiedSubmission(r)) return false;
+      if (statusFilter === "pending" && hasVerifiedSubmission(r)) return false;
       if (statusFilter === "answers" && !hasFormAnswers(r)) return false;
       if (!q) return true;
       return (
@@ -252,7 +280,7 @@ const Admin = () => {
 
   const stats = useMemo(() => {
     const total = responses.length;
-    const completed = responses.filter((r) => r.google_form_completed).length;
+    const completed = responses.filter(hasVerifiedSubmission).length;
     const withAnswers = responses.filter(hasFormAnswers).length;
     const pending = total - completed;
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
@@ -280,6 +308,9 @@ const Admin = () => {
 
   const exportCsv = () => {
     const rows = filtered.map((r) => ({
+      classificacao: r.research_classification ?? "unreviewed",
+      motivo: audit.reason(r),
+      evidencia_origem: r.verified_source_key ?? "",
       codigo: r.tracking_code || "",
       nome: displayName(r),
       documento: consentInfo(r)?.identity_document || "",
@@ -326,6 +357,8 @@ const Admin = () => {
   const openEdit = (r: Response) => {
     setEditing(r);
     setEditForm({
+      research_classification: r.research_classification ?? "unreviewed",
+      classification_note: r.classification_note ?? "",
       full_name: r.full_name ?? "",
       age: String(r.age ?? ""),
       email: r.email ?? "",
@@ -346,10 +379,15 @@ const Admin = () => {
       toast.error("Cidade, UF e gênero são obrigatórios");
       return;
     }
+    if (editForm.research_classification !== "unreviewed" && editForm.classification_note.trim().length < 5) {
+      toast.error("Informe a evidência usada na classificação"); return;
+    }
     setSaving(true);
     const { error } = await supabase
       .from("survey_responses")
       .update({
+        research_classification: editForm.research_classification,
+        classification_note: editForm.classification_note.trim() || null,
         full_name: editForm.full_name.trim() || null,
         age,
         email: editForm.email.trim() || null,
@@ -357,7 +395,7 @@ const Admin = () => {
         state: editForm.state.trim(),
         gender: editForm.gender.trim(),
       })
-      .eq("id", editing.id);
+      .eq("id", editing.id).select("id").single();
     setSaving(false);
     if (error) {
       toast.error("Não foi possível salvar: " + error.message);
@@ -365,8 +403,9 @@ const Admin = () => {
     }
     toast.success("Cadastro atualizado");
     setEditing(null);
-    const { data: fresh } = await fetchAll();
-    if (fresh) setResponses(fresh as Response[]);
+    const { data: fresh, error: refreshError } = await fetchAll();
+    if (refreshError) toast.error("Falha ao atualizar o painel");
+    if (!refreshError) setResponses(fresh as Response[]);
   };
 
   const confirmDelete = async () => {
@@ -381,8 +420,9 @@ const Admin = () => {
     toast.success("Registro excluído");
     setDeleting(null);
     setSelected(null);
-    const { data: fresh } = await fetchAll();
-    if (fresh) setResponses(fresh as Response[]);
+    const { data: fresh, error: refreshError } = await fetchAll();
+    if (refreshError) toast.error("Falha ao atualizar o painel");
+    if (!refreshError) setResponses(fresh as Response[]);
   };
 
   const logout = async () => {
@@ -409,7 +449,7 @@ const Admin = () => {
           <div className="flex items-center gap-2">
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-              Tempo real
+              Atualiza a cada 10s
             </div>
             <Button variant="default" size="sm" onClick={syncGoogleForms} disabled={syncing}>
               {syncing ? (
@@ -432,12 +472,19 @@ const Admin = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-5 space-y-5">
+        {loadError && <p role="alert" className="text-destructive">Falha ao atualizar dados. Contagens indisponíveis ou desatualizadas; não use para fechar a pesquisa.</p>}
+        <div className="bg-card rounded-2xl p-4 border border-border/60 space-y-2">
+          <p className="font-semibold">{fetching || loadError ? "Contagem não disponível" : `${audit.valid} respostas válidas para a meta de 50 · faltam ${audit.missing}`}</p>
+          <p className="text-xs text-muted-foreground">{audit.tests} testes · {audit.possibleDuplicates.size} cadastros com possível duplicidade · {audit.review} sem classificação · {audit.identifiableWithoutConflict} cadastros com e-mail/documento sem conflito identificado.</p>
+          <p className="text-xs text-muted-foreground">A meta exige envio verificado, classificação real e ausência de conflito de identidade. Marcadores antigos foram preservados. Abrir o formulário ou ter token não comprova envio. Use Validar Google Forms para buscar os envios.</p>
+          {syncIssues.length > 0 && <details><summary>Pendências da última sincronização ({syncIssues.length})</summary>{syncIssues.map(i => <p key={i.row} className="text-xs">Linha {i.row}: {i.reason}</p>)}</details>}
+        </div>
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <StatCard icon={<Users className="h-4 w-4" />} label="Total" value={stats.total} />
           <StatCard
             icon={<CheckCircle2 className="h-4 w-4" />}
-            label="Concluídos"
+            label="Envios verificados"
             value={stats.completed}
             tone="success"
           />
@@ -463,10 +510,10 @@ const Admin = () => {
             <ShieldAlert className="h-5 w-5 text-destructive shrink-0" />
             <div className="flex-1">
               <p className="text-sm font-semibold text-destructive">
-                {invalids.length} resposta(s) do Google Forms com código inválido
+                {invalids.length} ocorrência(s) no histórico de sincronização do Google Forms
               </p>
               <p className="text-xs text-muted-foreground">
-                Clique para revisar os envios que não puderam ser vinculados a um participante.
+                Histórico de ocorrências; algumas podem ter sido resolvidas em sincronizações posteriores.
               </p>
             </div>
           </button>
@@ -578,15 +625,16 @@ const Admin = () => {
 
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-1 items-start">
-                          {r.google_form_completed ? (
+                          {hasVerifiedSubmission(r) ? (
                             <Badge className="bg-success text-success-foreground hover:bg-success">
                               Concluído
                             </Badge>
                           ) : (
                             <Badge variant="outline" className="border-orange-500/50 text-orange-600 dark:text-orange-400">
-                              Pendente
+                              {r.google_form_completed ? "Conclusão legada · revisar" : "Pendente"}
                             </Badge>
                           )}
+                          <span className="text-xs text-muted-foreground max-w-64">{audit.reason(r)}</span>
                           {r.token_validated ? (
                             <Badge className="bg-primary/15 text-primary hover:bg-primary/15 gap-1">
                               <ShieldCheck className="h-3 w-3" /> Token válido
@@ -808,6 +856,16 @@ const Admin = () => {
             <DialogTitle>Editar cadastro</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            <label className="text-xs">Classificação da equipe</label>
+            <Select value={editForm.research_classification} onValueChange={v => setEditForm(s => ({ ...s, research_classification: v }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unreviewed">A revisar</SelectItem><SelectItem value="real">Real</SelectItem>
+                <SelectItem value="test">Teste</SelectItem><SelectItem value="duplicate">Duplicado confirmado</SelectItem>
+                <SelectItem value="excluded">Excluído da análise</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input aria-label="Evidência da classificação" placeholder="Evidência ou referência da seleção da equipe" value={editForm.classification_note} onChange={e => setEditForm(s => ({ ...s, classification_note: e.target.value }))} />
             {[
               { key: "full_name" as const, label: "Nome", type: "text" },
               { key: "age" as const, label: "Idade", type: "number" },
@@ -870,7 +928,7 @@ const Admin = () => {
       <Dialog open={invalidOpen} onOpenChange={setInvalidOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Respostas do Forms sem participante</DialogTitle>
+            <DialogTitle>Histórico de pendências do Google Forms (até 200)</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             {invalids.length === 0 ? (

@@ -1,192 +1,94 @@
-// Edge function: sync-google-form-responses
-import { createClient } from "npm:@supabase/supabase-js@2";
-import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
+import { exactColumn, submittedAt, rowPayload, evidenceKey } from './validation.ts';
 
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_sheets/v4";
-
-async function gatewayFetch(path: string, init?: RequestInit) {
-  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-  const connectorKey = Deno.env.get("GOOGLE_SHEETS_API_KEY");
-
-  if (!lovableKey || !connectorKey) {
-    throw new Error("Credenciais do gateway não configuradas");
-  }
-
-  const res = await fetch(`${GATEWAY_URL}${path}`, {
-    ...init,
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+});
+const required = (name: string) => {
+  const value = Deno.env.get(name);
+  if (!value) throw new Error(`Configuração ausente: ${name}`);
+  return value;
+};
+async function gatewayFetch(path: string) {
+  const response = await fetch(`https://connector-gateway.lovable.dev/google_sheets/v4${path}`, {
     headers: {
-      Authorization: `Bearer ${lovableKey}`,
-      "X-Connection-Api-Key": connectorKey,
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
+      Authorization: `Bearer ${required('LOVABLE_API_KEY')}`,
+      'X-Connection-Api-Key': required('GOOGLE_SHEETS_API_KEY'),
     },
+    signal: AbortSignal.timeout(30000),
   });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Gateway error ${res.status}: ${body}`);
-  }
-
-  return res.json();
+  if (!response.ok) throw new Error(`Gateway Google Sheets: HTTP ${response.status}`);
+  return response.json();
 }
 
-// ====== DETECÇÃO ROBUSTA DA COLUNA ======
-function findCodeColumn(header: string[]): number {
-  const norm = (s: string) =>
-    s
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim();
-
-  return header.findIndex((h) => {
-    const n = norm(h);
-    return (
-      n.includes("codigo") ||
-      n.includes("identificacao") ||
-      n.includes("autenticacao") ||
-      n.includes("token") ||
-      n.includes("tracking")
-    );
-  });
-}
-
-// ====== TIMESTAMP ======
-function findTimestampColumn(header: string[]): number {
-  const norm = (s: string) =>
-    s
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim();
-
-  return header.findIndex((h) => /carimbo|timestamp|data\/?hora/.test(norm(h)));
-}
-
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
+Deno.serve(async req => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+  if (req.method !== 'POST') return json({ error: 'Método não permitido' }, 405);
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-    const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-    const SHEET_ID = Deno.env.get("GOOGLE_FORM_RESPONSES_SHEET_ID");
-
-    if (!SUPABASE_URL || !SERVICE_ROLE || !ANON_KEY || !SHEET_ID) {
-      throw new Error("Configuração incompleta da sincronização");
-    }
-
-    const authHeader = req.headers.get("Authorization") ?? "";
-
-    const userClient = createClient(SUPABASE_URL, ANON_KEY, {
-      global: { headers: { Authorization: authHeader } },
+    const url = required('SUPABASE_URL');
+    const userClient = createClient(url, required('SUPABASE_ANON_KEY'), {
+      global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
     });
+    const { data: userData, error: authError } = await userClient.auth.getUser();
+    if (authError || !userData.user) return json({ error: 'Não autenticado' }, 401);
+    const admin = createClient(url, required('SUPABASE_SERVICE_ROLE_KEY'));
+    const { data: role, error: roleError } = await admin.from('user_roles').select('role')
+      .eq('user_id', userData.user.id).eq('role', 'admin').maybeSingle();
+    if (roleError) throw new Error('Falha ao verificar permissão administrativa');
+    if (!role) return json({ error: 'Sem permissão' }, 403);
 
-    const { data: userData } = await userClient.auth.getUser();
-
-    if (!userData?.user) {
-      return new Response(JSON.stringify({ error: "Não autenticado" }), {
-        status: 401,
-        headers: corsHeaders,
-      });
-    }
-
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
-
-    const { data: roleRow } = await admin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userData.user.id)
-      .eq("role", "admin")
-      .maybeSingle();
-
-    if (!roleRow) {
-      return new Response(JSON.stringify({ error: "Sem permissão" }), {
-        status: 403,
-        headers: corsHeaders,
-      });
-    }
-
-    const sheetJson = await gatewayFetch(`/spreadsheets/${SHEET_ID}/values/A1:ZZ10000`);
-    const rows: string[][] = sheetJson.values ?? [];
-
-    if (rows.length < 2) {
-      return new Response(JSON.stringify({ ok: true, message: "Sem respostas" }), {
-        headers: corsHeaders,
-      });
-    }
-
-    const header = rows[0];
-
-    const codeCol = findCodeColumn(header);
-    const tsCol = findTimestampColumn(header);
-
-    if (codeCol < 0) {
-      console.error("HEADER RECEBIDO:", header);
-      throw new Error("Coluna de código não encontrada");
-    }
-
-    let valid = 0;
-    let invalid = 0;
-    let processed = 0;
-
-    for (const row of rows.slice(1)) {
-      const rawCode = (row[codeCol] ?? "").toString().trim();
-      const normalized = rawCode.toUpperCase();
-      if (!normalized) continue;
+    const sheet = required('GOOGLE_FORM_RESPONSES_SHEET_ID');
+    const tab = required('GOOGLE_FORM_RESPONSES_TAB');
+    const offset = required('GOOGLE_FORM_TIMEZONE_OFFSET');
+    const range = `'${tab.replaceAll("'", "''")}'!A:ZZ`;
+    const result = await gatewayFetch(`/spreadsheets/${encodeURIComponent(sheet)}/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`);
+    const rows: string[][] = result.values ?? [];
+    if (!rows.length) return json({ ok: true, processed: 0, valid: 0, invalid: 0, failed: 0 });
+    const header = rows[0].map(String);
+    const codeCol = exactColumn(header, required('GOOGLE_FORM_CODE_HEADER'));
+    const timeCol = exactColumn(header, required('GOOGLE_FORM_TIMESTAMP_HEADER'));
+    const answerCol = exactColumn(header, required('GOOGLE_FORM_REQUIRED_ANSWER_HEADER'));
+    if (new Set([codeCol, timeCol, answerCol]).size !== 3) throw new Error('Configure três colunas distintas: código, data e resposta');
+    rowPayload(header, []); // Validate headers before any mutation.
+    let valid = 0, invalid = 0, failed = 0, processed = 0;
+    const issues: { row: number; reason: string }[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i].map(String);
+      if (row.every(v => !v.trim())) continue;
       processed++;
-
-      const payload: Record<string, string> = {};
-      header.forEach((h, i) => (payload[h] = row[i] ?? ""));
-
-      const { data: ok, error: confirmError } = await admin.rpc("confirm_response_with_token", {
-        _tracking_code: normalized,
-      });
-
-      if (confirmError) throw confirmError;
-
-      if (ok) {
-        const completedAt = tsCol >= 0 && row[tsCol] ? new Date(row[tsCol]).toISOString() : new Date().toISOString();
-        const { error: updateError } = await admin
-          .from("survey_responses")
-          .update({
-            main_answers: payload,
-            google_form_completed: true,
-            google_form_completed_at: completedAt,
-          })
-          .eq("tracking_code", normalized);
-        if (updateError) throw updateError;
-        valid++;
-      } else {
-        const { data: existing } = await admin
-          .from("invalid_form_responses")
-          .select("id")
-          .eq("attempted_code", normalized)
-          .limit(1)
-          .maybeSingle();
-        if (!existing) {
-          const { error: invalidError } = await admin.from("invalid_form_responses").insert({
-            attempted_code: normalized,
-            form_submitted_at: tsCol >= 0 && row[tsCol] ? new Date(row[tsCol]).toISOString() : null,
-            payload,
-            reason: "Código inexistente ou não vinculado a um cadastro",
-          });
-          if (invalidError) throw invalidError;
+      let reason = '';
+      try {
+        const payload = rowPayload(header, row);
+        const code = (row[codeCol] ?? '').trim().toUpperCase();
+        const timestamp = submittedAt(row[timeCol] ?? '', offset);
+        if (!(row[answerCol] ?? '').trim()) throw new Error('Resposta obrigatória ausente');
+        const { data: status, error } = await admin.rpc('ingest_verified_form_response', {
+          _tracking_code: code, _source_key: await evidenceKey(sheet, tab, payload),
+          _submitted_at: timestamp, _payload: payload,
+        });
+        if (error) { failed++; reason = `Falha no banco (${error.code ?? 'sem código'}); tente sincronizar novamente`; }
+        else if (status === 'verified' || status === 'already_verified') valid++;
+        else { invalid++; reason = String(status ?? 'Resposta inesperada do banco'); }
+        if (reason && !error) {
+          const { data: existing, error: lookupError } = await admin.from('invalid_form_responses')
+            .select('id').eq('attempted_code', code).eq('payload', JSON.stringify(payload)).eq('reason', reason).limit(1);
+          if (lookupError) throw new Error('Falha ao consultar pendência');
+          if (!existing?.length) {
+            const { error: insertError } = await admin.from('invalid_form_responses').insert({
+              attempted_code: code, form_submitted_at: timestamp, payload, reason,
+            });
+            if (insertError) throw new Error('Falha ao registrar pendência');
+          }
         }
-        invalid++;
+      } catch (error) {
+        failed++;
+        reason = error instanceof Error ? error.message : 'Falha ao processar linha';
       }
+      if (reason) issues.push({ row: i + 1, reason });
     }
-
-    return new Response(JSON.stringify({ ok: true, processed, valid, invalid }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (e) {
-    console.error("ERRO GERAL:", e);
-    return new Response(JSON.stringify({ error: String(e) }), {
-      status: 500,
-      headers: corsHeaders,
-    });
+    return json({ ok: failed === 0, processed, valid, invalid, failed, issues });
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : 'Falha na sincronização' }, 500);
   }
 });

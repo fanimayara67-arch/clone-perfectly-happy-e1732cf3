@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { useEffect, useState } from "react";
 import { ExternalLink, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PersonalData } from "@/components/survey/PersonalDataStep";
@@ -11,16 +13,19 @@ interface GoogleFormStepProps {
 }
 
 export const GoogleFormStep = ({ personal, trackingCode, onDone }: GoogleFormStepProps) => {
+  useEffect(() => {
+    if (!trackingCode) return;
+    void supabase.rpc("start_survey", { _tracking_code: trackingCode }).then(({ data, error }) => {
+      if (error || !data) toast.error("Não foi possível registrar o início. Seu cadastro foi preservado; a confirmação depende do envio do formulário.");
+    });
+  }, [trackingCode]);
   const [loaded, setLoaded] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const embedUrl = createGoogleFormUrl(personal, true, trackingCode);
   const openUrl = createGoogleFormUrl(personal, false, trackingCode);
 
-  // A conclusão não é marcada aqui: mark_google_form_completed é revogada para anon
-  // (migration 20260429211029) e toda chamada voltava 42501. Quem marca de verdade
-  // é confirm_response_with_token, chamada pela edge function sync-google-form-responses
-  // com service_role quando a resposta aparece na planilha — e essa fonte é confiável,
-  // pois depende do envio real do formulário, não do clique neste botão.
+  // The browser cannot observe a cross-origin Forms submission.
+  // Only ingestion of trusted source evidence can confirm completion.
   const handleDone = () => {
     setFinishing(true);
     onDone();
