@@ -46,6 +46,7 @@ export type Database = {
           age: number
           cep: string | null
           city: string
+          classification_note: string | null
           consent_given: boolean
           created_at: string
           email: string | null
@@ -59,17 +60,22 @@ export type Database = {
           neighborhood: string | null
           number: string | null
           phone: string | null
+          research_classification: string
           screening_answers: Json
           state: string
           street: string | null
+          survey_started_at: string | null
           token_validated: boolean
           token_validated_at: string | null
           tracking_code: string | null
+          verified_at: string | null
+          verified_source_key: string | null
         }
         Insert: {
           age: number
           cep?: string | null
           city: string
+          classification_note?: string | null
           consent_given?: boolean
           created_at?: string
           email?: string | null
@@ -83,17 +89,22 @@ export type Database = {
           neighborhood?: string | null
           number?: string | null
           phone?: string | null
+          research_classification?: string
           screening_answers?: Json
           state: string
           street?: string | null
+          survey_started_at?: string | null
           token_validated?: boolean
           token_validated_at?: string | null
           tracking_code?: string | null
+          verified_at?: string | null
+          verified_source_key?: string | null
         }
         Update: {
           age?: number
           cep?: string | null
           city?: string
+          classification_note?: string | null
           consent_given?: boolean
           created_at?: string
           email?: string | null
@@ -107,12 +118,16 @@ export type Database = {
           neighborhood?: string | null
           number?: string | null
           phone?: string | null
+          research_classification?: string
           screening_answers?: Json
           state?: string
           street?: string | null
+          survey_started_at?: string | null
           token_validated?: boolean
           token_validated_at?: string | null
           tracking_code?: string | null
+          verified_at?: string | null
+          verified_source_key?: string | null
         }
         Relationships: []
       }
@@ -176,11 +191,21 @@ export type Database = {
         Args: { _tracking_code: string }
         Returns: boolean
       }
+      ingest_verified_form_response: {
+        Args: {
+          _payload: Json
+          _source_key: string
+          _submitted_at: string
+          _tracking_code: string
+        }
+        Returns: string
+      }
       mark_google_form_completed: {
         Args: { _tracking_code: string }
         Returns: boolean
       }
       register_tracking_code: { Args: { _code: string }; Returns: boolean }
+      start_survey: { Args: { _tracking_code: string }; Returns: boolean }
       submit_survey_response: {
         Args: {
           _age: number
