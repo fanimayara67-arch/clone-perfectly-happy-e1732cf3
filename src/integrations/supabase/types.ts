@@ -43,11 +43,6 @@ export type Database = {
       }
       survey_responses: {
         Row: {
-          research_classification?: string
-          classification_note?: string | null
-          verified_source_key?: string | null
-          verified_at?: string | null
-          survey_started_at?: string | null
           age: number
           cep: string | null
           city: string
@@ -72,11 +67,6 @@ export type Database = {
           tracking_code: string | null
         }
         Insert: {
-          research_classification?: string
-          classification_note?: string | null
-          verified_source_key?: string | null
-          verified_at?: string | null
-          survey_started_at?: string | null
           age: number
           cep?: string | null
           city: string
@@ -101,11 +91,6 @@ export type Database = {
           tracking_code?: string | null
         }
         Update: {
-          research_classification?: string
-          classification_note?: string | null
-          verified_source_key?: string | null
-          verified_at?: string | null
-          survey_started_at?: string | null
           age?: number
           cep?: string | null
           city?: string
@@ -187,7 +172,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      start_survey: { Args: { _tracking_code: string }; Returns: boolean }
       confirm_response_with_token: {
         Args: { _tracking_code: string }
         Returns: boolean
